@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -64,5 +65,24 @@ bool LoadShelfCacheBody(std::string& body);
 
 // 阅读统计（/readdata/detail）
 bool FetchReadStats(ReadStats& out, std::string& err);
+
+// ---------------------------------------------------------------------------
+// 封面缩略图源数据（书架列表 80x112 槽位用）
+// - FetchCoverBytes：公网图片 GET。SDK esp_http_client 可靠模式（crt_bundle /
+//   PSRAM 缓冲 / 读截止 / 4MB 上限），同 GatewayCall 不用板载 HttpClient。
+//   302 手动跟随：响应 Location 只能经 HTTP_EVENT_ON_HEADER 事件回调捕获
+//   （esp_http_client_get_header 只读请求头）。调用方须先确保网络就绪
+//   （Board::EnsureNetworkReady），可在网络任务域执行
+// - SD 原始字节缓存 covers/<book_id>.img：保留原图分辨率，供本次解码与
+//   将来详情页大封面复用；book_id 非法字符转 '_'，无法成文件名时返回 ""
+// ---------------------------------------------------------------------------
+bool FetchCoverBytes(const std::string& url, std::vector<uint8_t>& out, std::string& err);
+std::string CoverCachePath(const std::string& book_id);
+bool SaveCoverCache(const std::string& book_id, const uint8_t* data, size_t len);
+bool LoadCoverCache(const std::string& book_id, std::vector<uint8_t>& out);
+
+// 书架浏览模式（NVS weread/view_mode，持久化用户上次选择）
+bool PreferGridView();
+bool SetPreferGridView(bool grid);
 
 }  // namespace weread

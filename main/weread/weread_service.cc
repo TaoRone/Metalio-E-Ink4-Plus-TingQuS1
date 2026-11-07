@@ -10,7 +10,10 @@
 
 #include <cstdio>
 #include <cerrno>
+#include <cstring>
+#include <strings.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 namespace {
 
@@ -312,6 +315,208 @@ bool LoadShelfCacheBody(std::string& body) {
     fclose(f);
     ESP_LOGI("WereadSvc", "cache loaded %u bytes", static_cast<unsigned>(body.size()));
     return !body.empty();
+}
+
+// ---------------------------------------------------------------------------
+// 封面缩略图源数据
+// ---------------------------------------------------------------------------
+
+// 封面源图上限 4MB：parsecover 类全尺寸封面 PNG 可超过 1MB（PSRAM 充裕）；
+// 仅作用于下载/缓存，解码仍按 200x268 缩小
+constexpr size_t kCoverMaxBytes = 4 * 1024 * 1024;
+constexpr const char* kCoverDir = "/sdcard/metalio/e-ink/weread/covers";
+
+static std::string CoverFileStem(const std::string& book_id) {
+    std::string s;
+    s.reserve(book_id.size());
+    for (char c : book_id) {
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                        (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.';
+        s.push_back(ok ? c : '_');
+    }
+    return s;
+}
+
+// 响应头捕获回调：esp_http_client 的响应 Location 只能经 HTTP_EVENT_ON_HEADER 拿到
+extern "C" esp_err_t CoverRedirectHeaderHandler(esp_http_client_event_t* evt) {
+    if (evt != nullptr && evt->event_id == HTTP_EVENT_ON_HEADER &&
+        evt->header_key != nullptr && evt->header_value != nullptr &&
+        strcasecmp(evt->header_key, "Location") == 0) {
+        auto* out = static_cast<std::string*>(evt->user_data);
+        if (out != nullptr) *out = evt->header_value;
+    }
+    return ESP_OK;
+}
+
+bool FetchCoverBytes(const std::string& url, std::vector<uint8_t>& out, std::string& err) {
+    out.clear();
+    err.clear();
+    // 书架 cover 均为 https（myqcloud / cdn.weread.qq.com）；不放行其它协议。
+    // res.weread.qq.com/wrepub/*_parsecover 会 302 到签名 COS URL，手动跟随（≤2 跳）。
+    // 响应头只能经 HTTP_EVENT_ON_HEADER 事件回调捕获（esp_http_client_get_header
+    // 只读请求头，实测拿不到 Location）。
+    std::string current = url;
+    for (int hop = 0; hop < 3; ++hop) {
+        err.clear();
+        if (current.rfind("https://", 0) != 0) {
+            err = "bad url";
+            return false;
+        }
+
+        esp_http_client_config_t cfg = {};
+        cfg.url = current.c_str();
+        cfg.method = HTTP_METHOD_GET;
+        cfg.timeout_ms = 15000;
+        cfg.crt_bundle_attach = esp_crt_bundle_attach;
+        cfg.keep_alive_enable = false;
+        cfg.buffer_size = 2048;
+        cfg.buffer_size_tx = 1024;
+        std::string redirect_loc;
+        cfg.event_handler = CoverRedirectHeaderHandler;
+        cfg.user_data = &redirect_loc;
+
+        esp_http_client_handle_t client = esp_http_client_init(&cfg);
+        if (client == nullptr) {
+            err = "http init failed";
+            return false;
+        }
+
+        bool done = false;
+        bool ok = false;
+        if (esp_http_client_open(client, 0) != ESP_OK) {
+            err = "open failed";
+            done = true;
+        } else {
+            esp_http_client_fetch_headers(client);
+            const int code = esp_http_client_get_status_code(client);
+            const int total = esp_http_client_get_content_length(client);
+            if (code >= 300 && code < 400) {
+                if (!redirect_loc.empty() && redirect_loc.size() < 1024) {
+                    std::string next;
+                    if (redirect_loc.rfind("https://", 0) == 0) {
+                        next = redirect_loc;
+                    } else if (redirect_loc.rfind("//", 0) == 0) {
+                        next = "https:" + redirect_loc;
+                    } else if (redirect_loc[0] == '/') {
+                        const size_t host_end = current.find('/', current.find("://") + 3);
+                        next = (host_end == std::string::npos ? current : current.substr(0, host_end)) +
+                               redirect_loc;
+                    }
+                    if (!next.empty()) {
+                        current = next;
+                        ESP_LOGI(kTag, "cover redirect %d -> %.80s", code, current.c_str());
+                    } else {
+                        err = "bad redirect";
+                        done = true;
+                    }
+                } else {
+                    err = "redirect " + std::to_string(code) + " no location";
+                    done = true;
+                }
+            } else if (code < 200 || code >= 300) {
+                err = "http " + std::to_string(code);
+                done = true;
+            } else if (total > static_cast<int>(kCoverMaxBytes)) {
+                err = "cover too large";
+                done = true;
+            } else {
+                // 有 Content-Length 按其分配（封顶 512KB）；无则按上限读，断连截短由解码器判坏图
+                const size_t cap = total > 0 ? static_cast<size_t>(total) : kCoverMaxBytes;
+                out.resize(cap);
+                size_t len = 0;
+                const int64_t deadline_us = esp_timer_get_time() + 20000000LL;
+                while (len < cap) {
+                    if (esp_timer_get_time() > deadline_us) {
+                        err = "read deadline";
+                        break;
+                    }
+                    const int r =
+                        esp_http_client_read(client, reinterpret_cast<char*>(out.data()) + len,
+                                             static_cast<int>(cap - len));
+                    if (r < 0) {
+                        err = "read failed";
+                        break;
+                    }
+                    if (r == 0) break;  // EOF
+                    len += static_cast<size_t>(r);
+                }
+                if (err.empty() && len > 0) {
+                    out.resize(len);
+                    ok = true;
+                } else {
+                    out.clear();
+                    if (err.empty()) err = "empty body";
+                }
+                done = true;
+            }
+        }
+        esp_http_client_cleanup(client);
+        if (done) {
+            if (!ok) {
+                ESP_LOGW(kTag, "cover dl fail: %s <- %.80s", err.c_str(), current.c_str());
+            }
+            return ok;
+        }
+        // 3xx 已解析出新 URL：下一跳
+    }
+    err = "too many redirects";
+    return false;
+}
+
+std::string CoverCachePath(const std::string& book_id) {
+    const std::string stem = CoverFileStem(book_id);
+    if (stem.empty() || stem == "." || stem == "..") return "";
+    return std::string(kCoverDir) + "/" + stem + ".img";
+}
+
+bool SaveCoverCache(const std::string& book_id, const uint8_t* data, size_t len) {
+    const std::string path = CoverCachePath(book_id);
+    if (path.empty() || data == nullptr || len == 0 || len > kCoverMaxBytes) return false;
+    // covers 是 weread 子目录：父目录可能不存在（从未同步过），逐层建
+    mkdir("/sdcard/metalio/e-ink/weread", 0755);
+    if (mkdir(kCoverDir, 0755) != 0 && errno != EEXIST) {
+        ESP_LOGW(kTag, "cover cache mkdir failed errno=%d", errno);
+        return false;
+    }
+    FILE* f = fopen(path.c_str(), "wb");
+    if (f == nullptr) return false;
+    const size_t w = fwrite(data, 1, len, f);
+    fclose(f);
+    if (w != len) {
+        unlink(path.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool LoadCoverCache(const std::string& book_id, std::vector<uint8_t>& out) {
+    out.clear();
+    const std::string path = CoverCachePath(book_id);
+    if (path.empty()) return false;
+    FILE* f = fopen(path.c_str(), "rb");
+    if (f == nullptr) return false;
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
+        out.insert(out.end(), buf, buf + n);
+    }
+    fclose(f);
+    if (out.empty() || out.size() > kCoverMaxBytes) {
+        out.clear();
+        return false;
+    }
+    return true;
+}
+
+bool PreferGridView() {
+    Settings settings(kNvsNs);
+    return settings.GetString("view_mode") == "grid";
+}
+
+bool SetPreferGridView(bool grid) {
+    Settings settings(kNvsNs, true);
+    settings.SetString("view_mode", grid ? "grid" : "list");
+    return true;
 }
 
 int FetchProgressPercent(const std::string& book_id, std::string& err) {

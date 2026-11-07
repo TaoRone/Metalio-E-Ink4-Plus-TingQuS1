@@ -10,17 +10,25 @@
 #include "vk_key_handler.h"
 #include "fontpack_lvgl.h"
 #include "lansync_screen/lansync_screen.h"
+#include "epd_content_policy.h"
+#include "reader/image_util.h"
+#include "reader/reader_types.h"
 
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
 #include <memory>
+#include <new>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -37,21 +45,36 @@ constexpr int kHeaderH = 44;
 constexpr int kFooterH = 36;
 constexpr int kRowH = 132;       // 两行文本（标题+作者）
 constexpr int kRowTitleH = 40;
-constexpr int kRowsPerPage = 6;
+constexpr int kRowsPerPage = 7;
 constexpr int kListFrameBorder = 2;
 constexpr int kListFramePad = 8;
 constexpr int kKeyThrottleMs = 3000;
+
+// 封面缩略图（有 cover URL 的行/格预留，后台补齐后贴图）
+constexpr int kThumbW = 80;    // 列表行槽（解码尺寸的等比缩小显示）
+constexpr int kThumbH = 112;
+constexpr int kThumbGap = 12;
+constexpr int kGridCols = 3;   // 网格 3x3=9 本/页
+constexpr int kGridRows = 3;
+constexpr int kGridGap = 16;
+constexpr int kGridTitleH = 36;
+constexpr int kCoverBoxW = 200;   // 封面盒上限（网格按格动态计算，详情页用满）
+constexpr int kCoverBoxH = 267;
+constexpr int kDecodeW = 200;     // 统一解码尺寸：覆盖网格/详情最大槽位
+constexpr int kDecodeH = 268;
 
 struct Ui {
     lv_obj_t* screen = nullptr;
     lv_obj_t* status_lbl = nullptr;
     lv_obj_t* list_frame = nullptr;
     lv_obj_t* page_lbl = nullptr;
-    lv_obj_t* key_btn = nullptr;   // 未配置 Key 时的输入按钮
+    lv_obj_t* key_btn = nullptr;    // 未配置 Key 时的输入按钮
+    lv_obj_t* mode_btn = nullptr;   // 网格/列表切换
 };
 
 Ui s_ui;
 bool s_alive = false;
+bool s_grid = false;   // 书架浏览模式（NVS 持久化，网格为默认）
 int s_page = 0;
 std::vector<weread::ShelfBook> s_books;
 std::atomic<bool> s_busy{false};
@@ -61,6 +84,44 @@ std::atomic<int64_t> s_last_sync_us{0};
 void OnRowClicked(lv_event_t* e);
 void OpenDetail(int idx);
 void BackToShelf();
+void RenderPage();
+void AttachThumb(lv_obj_t* box, const reader::RasterImage& img, int box_w, int box_h);
+void PatchRowThumb(int index);
+void CoverFillApplyOne(void* user_data);
+void CoverFillScheduleNext();
+void StartCoverFill();
+
+// ---------------------------------------------------------------------------
+// 封面缩略图（M1 封面：cover URL → SD 原始字节缓存 → 解码 L8 → 80x112 槽位）
+//
+// 链式后台填充：每本书一个 Network 域任务（先查 SD 缓存，miss 才保网下载），
+// 完成后经 ScreenLvAsync 回 LVGL 线程解码入 s_covers 并补当前可见行，然后
+// 续下一本。epoch 在 Create / 屏幕卸载 / 新书架同步时 +1 使旧链失效；
+// 全部状态（s_fill / s_covers / s_cover_bad）只在 LVGL 线程读写。
+// ---------------------------------------------------------------------------
+struct CoverWorkItem {
+    int index = -1;          // s_books 下标
+    std::string book_id;
+    std::string url;
+};
+struct CoverFillState {
+    uint32_t epoch = 0;
+    size_t cursor = 0;
+    std::vector<CoverWorkItem> items;
+};
+struct CoverFillMsg {
+    uint32_t epoch = 0;
+    int index = -1;
+    std::string book_id;
+    std::vector<uint8_t> bytes;  // 封面原始字节（下载或缓存读出）；失败为空
+};
+
+std::unique_ptr<CoverFillState> s_fill;
+std::unordered_map<std::string, std::unique_ptr<reader::RasterImage>> s_covers;
+std::unordered_set<std::string> s_cover_bad;  // 本次会话解码/下载失败，不再重试
+std::atomic<uint32_t> s_cover_epoch{0};
+std::atomic<bool> s_cover_abort{false};
+std::atomic<bool> s_cover_net_dead{false};  // 本链 EnsureNetwork 失败过，跳过后续下载
 
 // 键盘状态
 lv_obj_t* s_kb_screen = nullptr;
@@ -103,21 +164,48 @@ const lv_font_t* UiTitleFont() {
 // 书架渲染
 // ---------------------------------------------------------------------------
 
+int ItemsPerPage() { return s_grid ? kGridCols * kGridRows : kRowsPerPage; }
+
 int PageCount() {
-    return (static_cast<int>(s_books.size()) + kRowsPerPage - 1) / kRowsPerPage;
+    return (static_cast<int>(s_books.size()) + ItemsPerPage() - 1) / ItemsPerPage();
 }
 
-void FillRow(lv_obj_t* row, const weread::ShelfBook& b) {
+void FillRow(lv_obj_t* row, const weread::ShelfBook& b, int index) {
+    lv_obj_set_user_data(row, reinterpret_cast<void*>(static_cast<intptr_t>(index)));
+
+    // 有 cover URL 且本会话未标记失败的行：左侧预留 80x112 缩略图槽
+    const bool want_thumb = !b.cover.empty() && s_cover_bad.count(b.book_id) == 0;
+    const int text_x = want_thumb ? (kThumbW + kThumbGap) : 4;
+    const int text_w = LV_HOR_RES - kPad * 2 - kListFramePad * 2 - kListFrameBorder * 2 - 8 -
+                       (want_thumb ? (kThumbW + kThumbGap) : 0);
+
+    if (want_thumb) {
+        lv_obj_t* box = lv_obj_create(row);
+        lv_obj_remove_style_all(box);
+        lv_obj_set_size(box, kThumbW, kThumbH);
+        lv_obj_set_style_bg_color(box, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(box, lv_color_black(), 0);
+        lv_obj_set_style_border_width(box, 1, 0);
+        lv_obj_align(box, LV_ALIGN_LEFT_MID, 0, 0);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_CLICKABLE);
+        DisableScroll(box);
+        auto it = s_covers.find(b.book_id);
+        if (it != s_covers.end() && it->second != nullptr && !it->second->empty()) {
+            AttachThumb(box, *it->second, kThumbW, kThumbH);
+        }
+    }
+
     lv_obj_t* title = lv_label_create(row);
     std::string text = b.title;
     if (b.finish_reading) text += "  ✓";
     lv_label_set_text(title, text.c_str());
     lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(title, LV_HOR_RES - kPad * 2 - kListFramePad * 2 - kListFrameBorder * 2 - 8);
+    lv_obj_set_width(title, text_w);
     lv_obj_set_height(title, kRowTitleH);
     lv_obj_set_style_text_font(title, UiTitleFont(), 0);
     lv_obj_set_style_text_color(title, lv_color_black(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 4, 2);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, text_x, 2);
     lv_obj_clear_flag(title, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t* author = lv_label_create(row);
@@ -128,16 +216,21 @@ void FillRow(lv_obj_t* row, const weread::ShelfBook& b) {
     }
     lv_label_set_text(author, atext.c_str());
     lv_label_set_long_mode(author, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(author, LV_HOR_RES - kPad * 2 - kListFramePad * 2 - kListFrameBorder * 2 - 8);
+    lv_obj_set_width(author, text_w);
     lv_obj_set_style_text_font(author, UiFont(), 0);
     lv_obj_set_style_text_color(author, lv_color_black(), 0);
     lv_obj_set_style_text_opa(author, LV_OPA_60, 0);
-    lv_obj_align(author, LV_ALIGN_BOTTOM_LEFT, 4, -2);
+    lv_obj_align(author, LV_ALIGN_BOTTOM_LEFT, text_x, -2);
     lv_obj_clear_flag(author, LV_OBJ_FLAG_CLICKABLE);
 }
 
-void RenderPage() {
+void RenderListPage() {
     if (s_ui.list_frame == nullptr) return;
+    lv_obj_set_style_layout(s_ui.list_frame, LV_LAYOUT_FLEX, 0);
+    lv_obj_set_flex_flow(s_ui.list_frame, LV_FLEX_FLOW_COLUMN);
+    // 行距均分撑满框高（7 行/页；尾页不满时各行也会均匀铺开而非堆顶）
+    lv_obj_set_flex_align(s_ui.list_frame, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
     lv_obj_clean(s_ui.list_frame);
 
     const int total = PageCount();
@@ -165,7 +258,7 @@ void RenderPage() {
         lv_obj_add_event_cb(row, OnRowClicked, LV_EVENT_CLICKED,
                             reinterpret_cast<void*>(static_cast<intptr_t>(start + i)));
         DisableScroll(row);
-        FillRow(row, s_books[start + i]);
+        FillRow(row, s_books[start + i], start + i);
     }
 
     if (s_books.empty()) {
@@ -183,8 +276,299 @@ void RenderPage() {
     }
 }
 
+void RenderEmptyState() {
+    lv_obj_t* hint = lv_label_create(s_ui.list_frame);
+    lv_label_set_text(hint, weread::HasApiKey() ? Lang::Strings::WEREAD_EMPTY
+                                                : Lang::Strings::WEREAD_NO_KEY);
+    lv_obj_set_style_text_font(hint, UiFont(), 0);
+    lv_obj_set_style_text_color(hint, lv_color_black(), 0);
+    lv_obj_align(hint, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_clear_flag(hint, LV_OBJ_FLAG_CLICKABLE);
+    if (s_ui.key_btn != nullptr) {
+        if (weread::HasApiKey()) lv_obj_add_flag(s_ui.key_btn, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_clear_flag(s_ui.key_btn, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+// 网格模式：3x3 封面格，封面 170x227（3:4 书型）+ 下方居中书名
+void RenderGridPage() {
+    if (s_ui.list_frame == nullptr) return;
+    // 格子用绝对坐标排布，需脱离列表模式的纵向 flex（LVGL9 关 flex = 回 LV_LAYOUT_NONE）
+    lv_obj_set_style_layout(s_ui.list_frame, LV_LAYOUT_NONE, 0);
+    lv_obj_clean(s_ui.list_frame);
+
+    const int total = PageCount();
+    if (s_page >= total) s_page = total > 0 ? total - 1 : 0;
+
+    char page_text[32];
+    if (total == 0) {
+        std::snprintf(page_text, sizeof(page_text), "0 / 0");
+    } else {
+        std::snprintf(page_text, sizeof(page_text), "%d / %d", s_page + 1, total);
+    }
+    lv_label_set_text(s_ui.page_lbl, page_text);
+
+    if (s_books.empty()) {
+        RenderEmptyState();
+        return;
+    }
+
+    const int content_w = LV_HOR_RES - kPad * 2 - kListFramePad * 2 - kListFrameBorder * 2;
+    const int frame_content_h = static_cast<int>(lv_obj_get_content_height(s_ui.list_frame));
+    const int cell_w = (content_w - kGridGap * (kGridCols - 1)) / kGridCols;
+    const int cell_h = (frame_content_h - kGridGap * (kGridRows - 1)) / kGridRows;
+    // 封面取 3:4 书型上限：先限宽（格宽-边距），再限高（格高-书名行）
+    int cover_w = std::min(cell_w - 16, kCoverBoxW);
+    int cover_h = cover_w * 4 / 3;
+    const int cover_h_max = std::min(cell_h - 8 - kGridTitleH, kCoverBoxH);
+    if (cover_h > cover_h_max) {
+        cover_h = cover_h_max;
+        cover_w = cover_h * 3 / 4;
+    }
+
+    const int start = s_page * (kGridCols * kGridRows);
+    const int count = std::min(kGridCols * kGridRows,
+                               static_cast<int>(s_books.size()) - start);
+    for (int i = 0; i < count; ++i) {
+        const int idx = start + i;
+        const int col = i % kGridCols;
+        const int row = i / kGridCols;
+        const weread::ShelfBook& b = s_books[static_cast<size_t>(idx)];
+
+        lv_obj_t* cell = lv_obj_create(s_ui.list_frame);
+        lv_obj_remove_style_all(cell);
+        lv_obj_set_size(cell, cell_w, cell_h);
+        lv_obj_set_pos(cell, col * (cell_w + kGridGap), row * (cell_h + kGridGap));
+        lv_obj_add_flag(cell, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_user_data(cell, reinterpret_cast<void*>(static_cast<intptr_t>(idx)));
+        lv_obj_add_event_cb(cell, OnRowClicked, LV_EVENT_CLICKED,
+                            reinterpret_cast<void*>(static_cast<intptr_t>(idx)));
+        DisableScroll(cell);
+
+        // 封面盒：无 URL / 本会话已失败的书不预留（书名仍在格底，视觉整齐）
+        if (!b.cover.empty() && s_cover_bad.count(b.book_id) == 0) {
+            lv_obj_t* box = lv_obj_create(cell);
+            lv_obj_remove_style_all(box);
+            lv_obj_set_size(box, cover_w, cover_h);
+            lv_obj_set_style_bg_color(box, lv_color_white(), 0);
+            lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_color(box, lv_color_black(), 0);
+            lv_obj_set_style_border_width(box, 1, 0);
+            // 在书名行之上的区域垂直居中
+            const int box_y = std::max(0, (cell_h - 8 - kGridTitleH - cover_h) / 2);
+            lv_obj_align(box, LV_ALIGN_TOP_MID, 0, box_y);
+            lv_obj_clear_flag(box, LV_OBJ_FLAG_CLICKABLE);
+            DisableScroll(box);
+            auto it = s_covers.find(b.book_id);
+            if (it != s_covers.end() && it->second != nullptr && !it->second->empty()) {
+                AttachThumb(box, *it->second, cover_w, cover_h);
+            }
+        }
+
+        lv_obj_t* title = lv_label_create(cell);
+        std::string text = b.title;
+        if (b.finish_reading) text += " ✓";
+        lv_label_set_text(title, text.c_str());
+        lv_label_set_long_mode(title, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(title, cell_w);
+        lv_obj_set_style_text_font(title, UiFont(), 0);
+        lv_obj_set_style_text_color(title, lv_color_black(), 0);
+        lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(title, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+        lv_obj_clear_flag(title, LV_OBJ_FLAG_CLICKABLE);
+    }
+}
+
+void RenderPage() {
+    if (s_grid) {
+        RenderGridPage();
+    } else {
+        RenderListPage();
+    }
+}
+
 void SetStatus(const char* text) {
     if (s_ui.status_lbl != nullptr) lv_label_set_text(s_ui.status_lbl, text ? text : "");
+}
+
+// ---------------------------------------------------------------------------
+// 封面缩略图：渲染助手 + 链式后台填充
+// ---------------------------------------------------------------------------
+
+// 把封面图等比缩放进槽位并贴上（解码统一为网格尺寸 170x227，列表槽缩小显示）
+void AttachThumb(lv_obj_t* box, const reader::RasterImage& img, int box_w, int box_h) {
+    lv_obj_clean(box);
+    lv_obj_t* thumb = lv_image_create(box);
+    lv_image_set_src(thumb, &img.dsc);
+    // 与本地书架一致：封面走保灰阶路径（Shelf 不压暗），不用云列表的纯黑白
+    EpdSetContentRole(thumb, EpdContentRole::Shelf);
+    int w = img.width;
+    int h = img.height;
+    if (w > box_w) {
+        h = static_cast<int>((static_cast<int64_t>(h) * box_w) / w);
+        w = box_w;
+    }
+    if (h > box_h) {
+        w = static_cast<int>((static_cast<int64_t>(w) * box_h) / h);
+        h = box_h;
+    }
+    lv_obj_set_size(thumb, w, h);
+    lv_obj_center(thumb);
+    lv_obj_clear_flag(thumb, LV_OBJ_FLAG_CLICKABLE);
+}
+
+lv_obj_t* FindRowByIndex(int index) {
+    if (s_ui.list_frame == nullptr || !lv_obj_is_valid(s_ui.list_frame)) return nullptr;
+    const uint32_t n = lv_obj_get_child_count(s_ui.list_frame);
+    for (uint32_t i = 0; i < n; ++i) {
+        lv_obj_t* row = lv_obj_get_child(s_ui.list_frame, i);
+        if (row != nullptr &&
+            static_cast<int>(reinterpret_cast<intptr_t>(lv_obj_get_user_data(row))) == index) {
+            return row;
+        }
+    }
+    return nullptr;
+}
+
+// 行/格内的封面盒：按控件类型找（网格盒尺寸动态，不能按固定尺寸匹配）
+lv_obj_t* FindThumbBox(lv_obj_t* row) {
+    if (row == nullptr) return nullptr;
+    const uint32_t n = lv_obj_get_child_count(row);
+    for (uint32_t i = 0; i < n; ++i) {
+        lv_obj_t* c = lv_obj_get_child(row, i);
+        if (c != nullptr && lv_obj_check_type(c, &lv_obj_class)) return c;
+    }
+    return nullptr;
+}
+
+void PatchRowThumb(int index) {
+    if (index < 0 || index >= static_cast<int>(s_books.size())) return;
+    auto it = s_covers.find(s_books[static_cast<size_t>(index)].book_id);
+    if (it == s_covers.end() || it->second == nullptr || it->second->empty()) return;
+    lv_obj_t* row = FindRowByIndex(index);
+    if (row == nullptr) return;  // 非本页：数据已在 s_covers，翻页 RenderPage 时带上
+    lv_obj_t* box = FindThumbBox(row);
+    if (box == nullptr) return;  // 无槽位（无 URL/已失败）：无需补图
+    AttachThumb(box, *it->second, lv_obj_get_width(box), lv_obj_get_height(box));
+}
+
+// Network 域任务：单本封面取数（先 SD 缓存，miss 才保网下载并回写缓存）
+void CoverFillJob(const CoverWorkItem& item, uint32_t epoch) {
+    auto* msg = new (std::nothrow) CoverFillMsg{};
+    if (msg == nullptr) return;  // 链断：下次 StartCoverFill 重建
+    msg->epoch = epoch;
+    msg->index = item.index;
+    msg->book_id = item.book_id;
+    bool ok = weread::LoadCoverCache(item.book_id, msg->bytes);
+    if (!ok && !item.url.empty() && !s_cover_net_dead.load()) {
+        // 封面是 nice-to-have：短保网，失败一次则本链余下全部跳过
+        PowerPolicy::GetInstance().Acquire(PowerNeed::OtaDownload);
+        do {
+            if (!Board::GetInstance().EnsureNetworkReady(8000)) {
+                s_cover_net_dead.store(true);
+                break;
+            }
+            std::string err;
+            ok = weread::FetchCoverBytes(item.url, msg->bytes, err);
+        } while (false);
+        PowerPolicy::GetInstance().Release(PowerNeed::OtaDownload);
+        if (ok) {
+            // 缓存写失败不判失败：本次已拿到字节，仅少一层加速
+            weread::SaveCoverCache(item.book_id, msg->bytes.data(), msg->bytes.size());
+        }
+    }
+    if (!ok) msg->bytes.clear();
+    if (!ScreenLvAsync(CoverFillApplyOne, msg)) {
+        delete msg;  // 屏已销毁：链随卸载终止，回页后 Loaded 重建
+    }
+}
+
+// LVGL 线程：续链（下一本）
+void CoverFillScheduleNext() {
+    if (s_fill == nullptr) return;
+    if (!s_alive || s_cover_abort.load() || s_fill->epoch != s_cover_epoch.load()) {
+        s_fill.reset();
+        return;
+    }
+    if (s_fill->cursor >= s_fill->items.size()) {
+        s_fill.reset();
+        return;
+    }
+    const CoverWorkItem item = s_fill->items[s_fill->cursor++];
+    const uint32_t epoch = s_fill->epoch;
+    Application::GetInstance().Schedule([item, epoch]() { CoverFillJob(item, epoch); },
+                                        Application::TaskDomain::Network);
+}
+
+// LVGL 线程：单本封面回屏（解码入 map + 补当前可见行 + 续链）
+void CoverFillApplyOne(void* user_data) {
+    std::unique_ptr<CoverFillMsg> msg(static_cast<CoverFillMsg*>(user_data));
+    if (msg == nullptr) return;
+    if (!s_alive || s_cover_abort.load() || msg->epoch != s_cover_epoch.load()) {
+        if (s_fill != nullptr && s_fill->epoch == msg->epoch) s_fill.reset();
+        return;  // 旧链结果：丢弃且不续链
+    }
+    bool ok = false;
+    if (!msg->bytes.empty() && msg->index >= 0 && msg->index < static_cast<int>(s_books.size()) &&
+        s_books[static_cast<size_t>(msg->index)].book_id == msg->book_id) {
+        std::unique_ptr<reader::RasterImage> img(new (std::nothrow) reader::RasterImage());
+        if (img != nullptr &&
+            reader::DecodeImageToL8(msg->bytes.data(), msg->bytes.size(), kDecodeW, kDecodeH,
+                                    *img) &&
+            !img->empty()) {
+            img->BindDsc();
+            s_covers[msg->book_id] = std::move(img);
+            PatchRowThumb(msg->index);
+            ok = true;
+        }
+    }
+    if (!ok) s_cover_bad.insert(msg->book_id);
+    CoverFillScheduleNext();
+}
+
+// LVGL 线程：启动/续跑封面填充链（幂等：同 epoch 链存活则直接返回）
+void StartCoverFill() {
+    if (!s_alive) return;
+    if (s_fill != nullptr && !s_cover_abort.load() && s_fill->epoch == s_cover_epoch.load()) {
+        return;  // 链存活
+    }
+    s_fill.reset();
+    if (s_books.empty()) return;
+
+    std::unique_ptr<CoverFillState> state(new (std::nothrow) CoverFillState());
+    if (state == nullptr) return;
+    state->epoch = ++s_cover_epoch;
+    state->cursor = 0;
+
+    // 当前页优先（翻页立即有图），其余按书架顺序补齐
+    const int per = ItemsPerPage();
+    const int start = s_page * per;
+    std::vector<char> queued(s_books.size(), 0);
+    for (int i = start; i < start + per && i < static_cast<int>(s_books.size()); ++i) {
+        queued[static_cast<size_t>(i)] = 1;
+    }
+    auto append = [&](int i) {
+        const weread::ShelfBook& b = s_books[static_cast<size_t>(i)];
+        if (b.cover.empty() || b.book_id.empty()) return;
+        if (s_covers.count(b.book_id) || s_cover_bad.count(b.book_id)) return;
+        CoverWorkItem it;
+        it.index = i;
+        it.book_id = b.book_id;
+        it.url = b.cover;
+        state->items.push_back(std::move(it));
+    };
+    for (int i = 0; i < static_cast<int>(s_books.size()); ++i) {
+        if (queued[static_cast<size_t>(i)]) append(i);
+    }
+    for (int i = 0; i < static_cast<int>(s_books.size()); ++i) {
+        if (!queued[static_cast<size_t>(i)]) append(i);
+    }
+    if (state->items.empty()) return;
+
+    s_cover_abort.store(false);
+    s_cover_net_dead.store(false);
+    s_fill = std::move(state);
+    CoverFillScheduleNext();
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +594,10 @@ void AsyncApplySync(void* user_data) {
         SetStatus(msg->err.c_str());
         return;
     }
+    // 新书架数据：旧封面链失效；失败标记清零（URL/网络可能已恢复）
+    ++s_cover_epoch;
+    s_fill.reset();
+    s_cover_bad.clear();
     s_books = std::move(msg->books);
     s_page = 0;
     SetStatus("");
@@ -217,6 +605,7 @@ void AsyncApplySync(void* user_data) {
     if (!msg->raw_body.empty()) {
         weread::SaveShelfCacheBody(msg->raw_body);  // 失败静默：缓存是优化不是必须
     }
+    StartCoverFill();
 }
 
 void StartSync() {
@@ -454,6 +843,21 @@ void OnRefreshClicked(lv_event_t* /*e*/) { StartSync(); }
 
 void OnKeyBtnClicked(lv_event_t* /*e*/) { OpenKeyInput(); }
 
+void UpdateModeBtnLabel() {
+    if (s_ui.mode_btn == nullptr) return;
+    lv_obj_t* l = lv_obj_get_child(s_ui.mode_btn, 0);
+    if (l != nullptr) lv_label_set_text(l, s_grid ? "列表" : "网格");  // 按钮显示目标模式
+}
+
+void OnModeClicked(lv_event_t* /*e*/) {
+    s_grid = !s_grid;
+    weread::SetPreferGridView(s_grid);  // NVS 持久化，重启保持
+    s_page = 0;
+    UpdateModeBtnLabel();
+    RenderPage();
+    StartCoverFill();
+}
+
 // ---------------------------------------------------------------------------
 // 图书详情页：基础信息 + 后台拉取阅读进度 / 划线数
 // ---------------------------------------------------------------------------
@@ -517,12 +921,34 @@ void OpenDetail(int idx) {
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(scr, lv_color_black(), 0);
 
+    // 左侧大封面（复用 s_covers 内存图；无 URL/已失败不预留，文本保持全宽）
+    const bool show_cover = !b.cover.empty() && s_cover_bad.count(b.book_id) == 0;
+    const int text_x = show_cover ? (kPad * 2 + kCoverBoxW + 20) : kPad * 2;
+    const int text_w = LV_HOR_RES - text_x - kPad * 2;
+
+    if (show_cover) {
+        lv_obj_t* box = lv_obj_create(scr);
+        lv_obj_remove_style_all(box);
+        lv_obj_set_size(box, kCoverBoxW, kCoverBoxH);
+        lv_obj_set_style_bg_color(box, lv_color_white(), 0);
+        lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(box, lv_color_black(), 0);
+        lv_obj_set_style_border_width(box, 1, 0);
+        lv_obj_align(box, LV_ALIGN_TOP_LEFT, kPad * 2, 56);
+        lv_obj_clear_flag(box, LV_OBJ_FLAG_CLICKABLE);
+        DisableScroll(box);
+        auto it = s_covers.find(b.book_id);
+        if (it != s_covers.end() && it->second != nullptr && !it->second->empty()) {
+            AttachThumb(box, *it->second, kCoverBoxW, kCoverBoxH);
+        }
+    }
+
     lv_obj_t* title = lv_label_create(scr);
     lv_label_set_text(title, b.title.c_str());
     lv_label_set_long_mode(title, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(title, LV_HOR_RES - kPad * 4);
+    lv_obj_set_width(title, text_w);
     lv_obj_set_style_text_font(title, UiTitleFont(), 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, kPad * 2, 56);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, text_x, 56);
 
     std::string base;
     base += b.author.empty() ? "-" : b.author;
@@ -536,12 +962,12 @@ void OpenDetail(int idx) {
     lv_obj_t* meta = lv_label_create(scr);
     lv_label_set_text(meta, base.c_str());
     lv_obj_set_style_text_font(meta, UiFont(), 0);
-    lv_obj_align(meta, LV_ALIGN_TOP_LEFT, kPad * 2, 200);
+    lv_obj_align(meta, LV_ALIGN_TOP_LEFT, text_x, 236);
 
     lv_obj_t* info = lv_label_create(scr);
     lv_label_set_text(info, "阅读进度: 加载中…");
     lv_obj_set_style_text_font(info, UiFont(), 0);
-    lv_obj_align(info, LV_ALIGN_TOP_LEFT, kPad * 2, 420);
+    lv_obj_align(info, LV_ALIGN_TOP_LEFT, kPad * 2, 56 + kCoverBoxH + 24);
     s_d_info = info;
 
     lv_obj_t* hint = lv_label_create(scr);
@@ -627,12 +1053,17 @@ void OnScreenLoaded(lv_event_t* e) {
     // 自动刷新：仅当缓存缺失或距上次同步超过 60s（从详情返回不触发同步风暴）
     const bool stale = (esp_timer_get_time() - s_last_sync_us.load()) > 60LL * 1000000LL;
     if (weread::HasApiKey() && (s_books.empty() || stale)) StartSync();
+    // 封面填充（幂等）：缓存书架离线可显，同步完成后由 AsyncApplySync 再启
+    StartCoverFill();
 }
 
 void OnScreenUnloaded(lv_event_t* e) {
     if (lv_event_get_target(e) != s_ui.screen) return;
     // 不清数据：键盘页/详情页临时顶上来时保留；真正离开应用由 Create() 全量重置
     s_alive = false;
+    // 终止封面链（离屏期间不再下载/补图）；回页后 Loaded 用新 epoch 重建
+    s_cover_abort.store(true);
+    ++s_cover_epoch;
     if (s_detail == nullptr) {
         PowerPolicy::GetInstance().Release(PowerNeed::ForegroundNetwork);
         ScreenVolumeKeysPaging(false);
@@ -644,10 +1075,17 @@ void OnScreenUnloaded(lv_event_t* e) {
 lv_obj_t* WereadScreen::Create() {
     s_ui = Ui{};
     s_alive = true;   // Create 即视为激活（Loaded 之前可能先收到异步结果）
+    s_grid = weread::PreferGridView();  // 上次选择的浏览模式（默认网格）
     s_page = 0;
     s_books.clear();
     s_busy.store(false);
     s_detail_idx = -1;
+    // 封面状态全量重置（内存图 / 失败标记 / 填充链）；SD 缓存仍有效可秒回
+    s_fill.reset();
+    s_covers.clear();
+    s_cover_bad.clear();
+    ++s_cover_epoch;
+    s_cover_abort.store(true);  // Loaded 之前不启链
     // 注意：不从这边删除旧详情页——屏幕生命周期归系统导航栈管理，
     // 它返回首页时可能已经删除；二次释放会造成 LVGL 堆损坏（表现为再进应用卡死）。
     // 极端情况下泄漏一个页面对象，可接受。
@@ -685,6 +1123,18 @@ lv_obj_t* WereadScreen::Create() {
     lv_obj_set_style_text_font(s_ui.status_lbl, UiFont(), 0);
     lv_obj_set_flex_grow(s_ui.status_lbl, 1);
 
+    // 网格/列表切换（白底黑边；标签为目标模式名，选择持久化到 NVS）
+    s_ui.mode_btn = lv_btn_create(header);
+    lv_obj_set_size(s_ui.mode_btn, 110, 40);
+    lv_obj_set_style_bg_color(s_ui.mode_btn, lv_color_white(), 0);
+    lv_obj_set_style_border_color(s_ui.mode_btn, lv_color_black(), 0);
+    lv_obj_set_style_border_width(s_ui.mode_btn, 2, 0);
+    lv_obj_t* ml = lv_label_create(s_ui.mode_btn);
+    lv_obj_set_style_text_color(ml, lv_color_black(), 0);
+    lv_obj_center(ml);
+    lv_obj_add_event_cb(s_ui.mode_btn, OnModeClicked, LV_EVENT_CLICKED, nullptr);
+    UpdateModeBtnLabel();
+
     lv_obj_t* refresh = lv_btn_create(header);
     lv_obj_set_size(refresh, 110, 40);
     lv_obj_set_style_bg_color(refresh, lv_color_black(), 0);
@@ -694,9 +1144,9 @@ lv_obj_t* WereadScreen::Create() {
     lv_obj_center(rl);
     lv_obj_add_event_cb(refresh, OnRefreshClicked, LV_EVENT_CLICKED, nullptr);
 
-    // 列表外框
+    // 列表外框：高度动态吃满标题栏与底栏之间的全部可用高度
     const int list_y = status.height + kPad + kHeaderH + kRowGap;
-    const int list_h = kRowsPerPage * (kRowH + kRowGap) + kListFramePad * 2 + kListFrameBorder * 2;
+    const int list_h = LV_VER_RES - list_y - kRowGap - kFooterH - kPad;
     s_ui.list_frame = lv_obj_create(scr);
     lv_obj_set_size(s_ui.list_frame, LV_HOR_RES - kPad * 2, list_h);
     lv_obj_align(s_ui.list_frame, LV_ALIGN_TOP_MID, 0, list_y);
