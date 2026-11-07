@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>听趣S1 · Metalio E-Ink4 Plus 开源固件</title>
+<meta name="description" content="听趣S1：为 Metalio E-Ink4 Plus 打造的第三方开源固件。微信读书官方 API 书架同步、Reeden WebDAV 生态、保留 4G/WiFi/蓝牙与官方电源管理。">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <h1>听趣S1</h1>
+    <p class="tagline">Metalio E-Ink4 Plus 第三方开源固件<br>
+    <span class="dim">微信读书 · Reeden 双阅读生态 · 4G  Always-On · 官方级省电策略</span></p>
+    <div class="badges">
+      <span class="badge ok">M1 微信读书书架同步 · 真机已通</span>
+      <span class="badge dev">Reeden WebDAV 同步 · 开发中</span>
+      <span class="badge">ESP32-S31 · ESP-IDF v6.1</span>
+    </div>
+    <p class="links">
+      <a class="btn" href="https://github.com/TaoRone/Metalio-E-Ink4-Plus-TingQuS1" target="_blank" rel="noopener">GitHub 仓库</a>
+      <a class="btn ghost" href="#feedback">意见反馈</a>
+    </p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section>
+    <h2>特性</h2>
+    <div class="grid">
+      <div class="card"><h3>微信读书书架同步</h3><p>官方 Agent API（API Key 认证），书架 / 阅读进度 / 笔记划线 / 阅读统计。局域网剪贴板网页一键配置 Key。</p></div>
+      <div class="card"><h3>Reeden 生态兼容</h3><p>通用 WebDAV/S3 客户端，读写 Reeden 同步空间：书架、精确阅读位置（章节/段落/元素）、双向同步（开发中）。</p></div>
+      <div class="card"><h3>完整通信能力</h3><p>4G Cat.1（内置联通物联卡 + 外置 SIM 切换）、WiFi、蓝牙听书全部保留，4G 下实测可跑微信读书同步。</p></div>
+      <div class="card"><h3>官方电源管理</h3><p>PowerPolicy 全套保留：待机浅睡、自动断网省电、网络宽限；联网应用按官方 PowerNeed 机制声明保网。</p></div>
+      <div class="card"><h3>局域网剪贴板</h3><p>内置 :8080 小服务，电脑浏览器填写 3 个粘贴位 / 一键设置微信读书 Key / 预填 WebDAV 配置。</p></div>
+      <div class="card"><h3>软裁剪可回开</h3><p>每日清单、百问 AI 默认隐藏（Kconfig 开关），代码完整保留，menuconfig 一键回开。</p></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>与官方固件对比</h2>
+    <table class="cmp">
+      <thead><tr><th>功能</th><th>听趣S1</th><th>官方固件</th></tr></thead>
+      <tbody>
+        <tr><td>本地阅读（.ebook/.epub/.txt）</td><td class="y">✓</td><td class="y">✓</td></tr>
+        <tr><td>微信读书书架/进度/笔记同步</td><td class="y">✓ 官方 API</td><td class="n">✗</td></tr>
+        <tr><td>Reeden WebDAV 同步</td><td class="y">开发中</td><td class="n">✗</td></tr>
+        <tr><td>4G 内外卡 / WiFi / 蓝牙音频</td><td class="y">✓ 全保留</td><td class="y">✓</td></tr>
+        <tr><td>电源管理（待机/自动断网）</td><td class="y">✓ 官方全套</td><td class="y">✓</td></tr>
+        <tr><td>壁纸待机 / USB 传书 / WiFi 传书</td><td class="y">✓ 全保留</td><td class="y">✓</td></tr>
+        <tr><td>百问 AI 语音 / 每日清单</td><td class="o">隐藏可回开¹</td><td class="y">内置²</td></tr>
+        <tr><td>云端依赖</td><td class="y">无（仅只读官方接口）</td><td class="o">官方云</td></tr>
+        <tr><td>开源</td><td class="y">✓ MIT</td><td class="n">源码开放但云端闭源</td></tr>
+      </tbody>
+    </table>
+    <p class="note">¹ 开源版云端 endpoint 留空，这些功能本就无法使用；入口隐藏、代码保留。 ² 需官方云服务。</p>
+  </section>
+
+  <section>
+    <h2>构建与刷机</h2>
+    <ol class="steps">
+      <li>WSL2 + Ubuntu 24.04，安装 ESP-IDF v6.1（target esp32s31）</li>
+      <li><code>git clone https://github.com/TaoRone/Metalio-E-Ink4-Plus-TingQuS1.git</code></li>
+      <li>构建目录需纯 ASCII 路径：<code>idf.py -B ~/build/tingqu-s1 build</code>（工程路径含非 ASCII 字符会触发 picolibc specs 路径 bug）</li>
+      <li><code>BUILD_DIR=~/build/tingqu-s1 ESPTOOL_CHIP=esp32s31 bash merge_firmware.sh</code></li>
+      <li>USB 刷入全量镜像，或 SD 卡放置固件卡刷。首次刷机前建议备份原厂 16MB 固件。</li>
+    </ol>
+    <p class="note">详细文档见 GitHub README 与 docs/。</p>
+  </section>
+
+  <section id="feedback">
+    <h2>意见反馈</h2>
+    <p class="dim">固件体验、Bug、功能建议都欢迎。联系方式选填，方便我们跟进。</p>
+    <form id="fb-form">
+      <div class="row">
+        <input name="nickname" placeholder="昵称（选填）" maxlength="32">
+        <input name="contact" placeholder="联系方式：邮箱 / QQ / 微信（选填）" maxlength="64">
+      </div>
+      <textarea name="content" placeholder="你的反馈…（必填）" maxlength="2000" required></textarea>
+      <button class="btn" type="submit">提交反馈</button>
+      <span id="fb-status" class="dim"></span>
+    </form>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>听趣S1 · 开源固件 · MIT License · 与 Metalio / CloudZao / 微信读书 / Reeden 无隶属关系</p>
+    <p class="dim">微信读书功能基于腾讯官方开放的 Agent API，需用户自行获取 API Key。</p>
+  </div>
+</footer>
+<script src="assets/site.js"></script>
+</body>
+</html>
