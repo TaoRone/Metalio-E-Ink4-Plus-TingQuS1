@@ -9,6 +9,7 @@
 #include <cJSON.h>
 
 #include <cstdio>
+#include <sys/stat.h>
 
 namespace {
 
@@ -122,11 +123,9 @@ bool GatewayCall(const std::string& api_name, const std::string& params_json,
     size_t buf_cap = 0;
 
     const esp_err_t open_err = esp_http_client_open(client, static_cast<int>(body.size()));
-    ESP_LOGI(kTag, "client open -> %s", esp_err_to_name(open_err));
     bool transport_ok = false;
     if (open_err == ESP_OK) {
         const int written = esp_http_client_write(client, body.c_str(), static_cast<int>(body.size()));
-        ESP_LOGI(kTag, "client write -> %d", written);
         if (written >= 0) {
             esp_http_client_fetch_headers(client);
             code = esp_http_client_get_status_code(client);
@@ -197,27 +196,45 @@ bool GatewayCall(const std::string& api_name, const std::string& params_json,
 }
 
 bool FetchShelf(std::vector<ShelfBook>& out, std::string& err) {
+    std::string discard;
+    return FetchShelf(out, discard, err);
+}
+
+bool FetchShelf(std::vector<ShelfBook>& out, std::string& raw_body, std::string& err) {
     out.clear();
+    raw_body.clear();
     const int64_t begin_us = esp_timer_get_time();
     std::string body;
     if (!GatewayCall("/shelf/sync", "", body, err)) {
         return false;
     }
+    raw_body = body;
     const int64_t got_us = esp_timer_get_time();
 
+    if (!ParseShelfBody(body, out, err)) {
+        return false;
+    }
+    const int64_t parsed_us = esp_timer_get_time();
+    ESP_LOGI(kTag, "shelf: http %lld ms, parse %lld ms, books %u",
+             (long long)((got_us - begin_us) / 1000), (long long)((parsed_us - got_us) / 1000),
+             static_cast<unsigned>(out.size()));
+    return true;
+}
+
+bool ParseShelfBody(const std::string& body, std::vector<ShelfBook>& out, std::string& err) {
     CjsonPsramGuard guard;
     cJSON* root = cJSON_Parse(body.c_str());
     if (root == nullptr) {
         err = "bad json";
         return false;
     }
-    const int64_t parsed_us = esp_timer_get_time();
     const cJSON* books = cJSON_GetObjectItem(root, "books");
     if (!cJSON_IsArray(books)) {
         err = "no books field";
         cJSON_Delete(root);
         return false;
     }
+    out.clear();
     out.reserve(cJSON_GetArraySize(books));
     cJSON* item = nullptr;
     cJSON_ArrayForEach(item, books) {
@@ -235,14 +252,58 @@ bool FetchShelf(std::vector<ShelfBook>& out, std::string& err) {
         }
     }
     cJSON_Delete(root);
-    ESP_LOGI(kTag, "shelf: http %lld ms, parse %lld ms, books %u",
-             (long long)((got_us - begin_us) / 1000), (long long)((parsed_us - got_us) / 1000),
-             static_cast<unsigned>(out.size()));
     if (out.empty()) {
         err = "empty shelf";
         return false;
     }
     return true;
+}
+
+bool FetchBookmarkCount(const std::string& book_id, int& count, std::string& err) {
+    count = 0;
+    std::string body;
+    const std::string params = "\"bookId\":\"" + book_id + "\"";
+    if (!GatewayCall("/book/bookmarklist", params, body, err)) {
+        return false;
+    }
+    CjsonPsramGuard guard;
+    cJSON* root = cJSON_Parse(body.c_str());
+    if (root == nullptr) {
+        err = "bad json";
+        return false;
+    }
+    for (const char* key : {"bookmarks", "items", "list", "data"}) {
+        const cJSON* arr = cJSON_GetObjectItem(root, key);
+        if (cJSON_IsArray(arr)) {
+            count = cJSON_GetArraySize(arr);
+            break;
+        }
+    }
+    cJSON_Delete(root);
+    return true;
+}
+
+bool SaveShelfCacheBody(const std::string& body) {
+    const char* path = "/sdcard/metalio/e-ink/weread/shelf_cache.json";
+    mkdir("/sdcard/metalio/e-ink/weread", 0755);
+    FILE* f = fopen(path, "wb");
+    if (f == nullptr) return false;
+    fwrite(body.data(), 1, body.size(), f);
+    fclose(f);
+    return true;
+}
+
+bool LoadShelfCacheBody(std::string& body) {
+    const char* path = "/sdcard/metalio/e-ink/weread/shelf_cache.json";
+    FILE* f = fopen(path, "rb");
+    if (f == nullptr) return false;
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
+        body.append(buf, n);
+    }
+    fclose(f);
+    return !body.empty();
 }
 
 int FetchProgressPercent(const std::string& book_id, std::string& err) {

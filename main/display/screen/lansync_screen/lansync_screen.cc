@@ -30,38 +30,7 @@ constexpr int kPad = 12;
 constexpr int kRowGap = 10;
 
 // 极简剪贴板页面：3 槽 + 保存/设为 Key
-const char kPageHtml[] = R"HTML(<!doctype html>
-<html lang="zh"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>听趣S1 剪贴板</title>
-<style>
-body{font-family:sans-serif;max-width:560px;margin:24px auto;padding:0 16px;color:#111}
-h1{font-size:20px}textarea{width:100%;height:72px;font-size:16px;padding:8px;box-sizing:border-box}
-button{font-size:15px;padding:8px 14px;margin:6px 6px 0 0;cursor:pointer}
-.row{margin:14px 0}.key{background:#111;color:#fff}
-.status{font-size:13px;color:#666}
-</style></head><body>
-<h1>听趣S1 · 局域网剪贴板</h1>
-<div id="st" class="status">加载中…</div>
-<div class="row"><textarea id="t1"></textarea><br>
-<button onclick="save(1)">保存到粘贴位1</button><button class="key" onclick="setkey(1)">设为微信读书Key</button></div>
-<div class="row"><textarea id="t2"></textarea><br>
-<button onclick="save(2)">保存到粘贴位2</button><button class="key" onclick="setkey(2)">设为微信读书Key</button></div>
-<div class="row"><textarea id="t3"></textarea><br>
-<button onclick="save(3)">保存到粘贴位3</button><button class="key" onclick="setkey(3)">设为微信读书Key</button></div>
-<script>
-async function refresh(){const r=await fetch('/api/status');const j=await r.json();
-document.getElementById('st').textContent='Key '+(j.has_key?'已配置':'未配置');
-t1.value=j.s1||'';t2.value=j.s2||'';t3.value=j.s3||''}
-async function save(n){const t=document.getElementById('t'+n).value;
-await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({slot:n,text:t})});refresh()}
-async function setkey(n){const t=document.getElementById('t'+n).value;
-const r=await fetch('/api/setkey',{method:'POST',headers:{'Content-Type':'application/json'},
-body:JSON.stringify({slot:n,text:t})});const j=await r.json();
-alert(j.ok?'已设置为微信读书 Key':'设置失败：内容不是有效 Key（需 wrk- 开头）')}
-refresh();
-</script></body></html>)HTML";
+const char kPageHtml[] = R"HTML(<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>听趣S1 剪贴板</title><style>body{font-family:sans-serif;max-width:560px;margin:24px auto;padding:0 16px;color:#111}h1{font-size:20px}textarea{width:100%;height:72px;font-size:16px;padding:8px;box-sizing:border-box}button{font-size:15px;padding:8px 14px;margin:6px 6px 0 0;cursor:pointer}.row{margin:14px 0}.key{background:#111;color:#fff}.status{font-size:13px;color:#666}</style></head><body><h1>听趣S1 · 局域网剪贴板</h1><div id="st" class="status">加载中…</div><div class="row"><textarea id="t1"></textarea><br><button onclick="save(1)">保存到粘贴位1</button><button class="key" onclick="setkey(1)">设为微信读书Key</button></div><div class="row"><textarea id="t2"></textarea><br><button onclick="save(2)">保存到粘贴位2</button><button class="key" onclick="setkey(2)">设为微信读书Key</button></div><div class="row"><textarea id="t3"></textarea><br><button onclick="save(3)">保存到粘贴位3</button><button class="key" onclick="setkey(3)">设为微信读书Key</button></div><script>async function refresh(){const r=await fetch("/api/status");const j=await r.json();document.getElementById("st").textContent="Key "+(j.has_key?"已配置":"未配置");t1.value=j.s1||"";t2.value=j.s2||"";t3.value=j.s3||""}async function save(n){const t=document.getElementById("t"+n).value;await fetch("/api/save",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:n,text:t})});refresh()}async function setkey(n){const t=document.getElementById("t"+n).value;const r=await fetch("/api/setkey",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({slot:n,text:t})});const j=await r.json();alert(j.ok?"已设置为微信读书 Key":"设置失败：内容不是有效 Key（需 wrk- 开头）")}refresh();</script></body></html>)HTML";
 
 lv_obj_t* s_screen = nullptr;
 httpd_handle_t s_httpd = nullptr;
