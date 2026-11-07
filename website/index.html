@@ -3,79 +3,123 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>听趣S1 · Metalio E-Ink4 Plus 开源固件</title>
-<meta name="description" content="听趣S1：为 Metalio E-Ink4 Plus 打造的第三方开源固件。微信读书官方 API 书架同步、Reeden WebDAV 生态、保留 4G/WiFi/蓝牙与官方电源管理。">
+<title>听趣S1 · 你的墨水屏阅读伴侣</title>
+<meta name="description" content="听趣S1：Metalio E-Ink4 Plus 第三方开源固件。微信读书书架/进度/笔记同步、Reeden 网盘书库直达、4G+WiFi 常在线、官方级省电。">
+<meta property="og:title" content="听趣S1 · 你的墨水屏阅读伴侣">
+<meta property="og:description" content="微信读书 + Reeden 双生态 · Metalio E-Ink4 Plus 开源固件">
+<meta property="og:image" content="https://readere4p.taor.site/assets/img/product.jpg">
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
 <header class="hero">
-  <div class="wrap">
-    <h1>听趣S1</h1>
-    <p class="tagline">Metalio E-Ink4 Plus 第三方开源固件<br>
-    <span class="dim">微信读书 · Reeden 双阅读生态 · 4G  Always-On · 官方级省电策略</span></p>
-    <div class="badges">
-      <span class="badge ok">M1 微信读书书架同步 · 真机已通</span>
-      <span class="badge dev">Reeden WebDAV 同步 · 开发中</span>
-      <span class="badge">ESP32-S31 · ESP-IDF v6.1</span>
+  <div class="wrap hero-grid">
+    <div>
+      <h1>听趣S1</h1>
+      <p class="tagline">你的墨水屏阅读伴侣<br>
+      <span class="dim">微信读书进度随身带 · 网盘书库直接读 · 4G 永远在线</span></p>
+      <div class="badges">
+        <span class="badge ok">微信读书同步 · 已上线</span>
+        <span class="badge dev">Reeden 书库 · 开发中</span>
+      </div>
+      <p class="links">
+        <a class="btn" href="#tutorials">上手教程</a>
+        <a class="btn ghost" href="#feedback">意见反馈</a>
+        <a class="btn ghost" href="build.html">开发者文档</a>
+      </p>
     </div>
-    <p class="links">
-      <a class="btn" href="https://github.com/TaoRone/Metalio-E-Ink4-Plus-TingQuS1" target="_blank" rel="noopener">GitHub 仓库</a>
-      <a class="btn ghost" href="#feedback">意见反馈</a>
-    </p>
+    <figure class="hero-img">
+      <img src="assets/img/product.jpg" alt="Metalio E-Ink4 Plus 墨水屏设备">
+    </figure>
   </div>
 </header>
 
 <main class="wrap">
   <section>
-    <h2>特性</h2>
+    <h2>它能为你做什么</h2>
     <div class="grid">
-      <div class="card"><h3>微信读书书架同步</h3><p>官方 Agent API（API Key 认证），书架 / 阅读进度 / 笔记划线 / 阅读统计。局域网剪贴板网页一键配置 Key。</p></div>
-      <div class="card"><h3>Reeden 生态兼容</h3><p>通用 WebDAV/S3 客户端，读写 Reeden 同步空间：书架、精确阅读位置（章节/段落/元素）、双向同步（开发中）。</p></div>
-      <div class="card"><h3>完整通信能力</h3><p>4G Cat.1（内置联通物联卡 + 外置 SIM 切换）、WiFi、蓝牙听书全部保留，4G 下实测可跑微信读书同步。</p></div>
-      <div class="card"><h3>官方电源管理</h3><p>PowerPolicy 全套保留：待机浅睡、自动断网省电、网络宽限；联网应用按官方 PowerNeed 机制声明保网。</p></div>
-      <div class="card"><h3>局域网剪贴板</h3><p>内置 :8080 小服务，电脑浏览器填写 3 个粘贴位 / 一键设置微信读书 Key / 预填 WebDAV 配置。</p></div>
-      <div class="card"><h3>软裁剪可回开</h3><p>每日清单、百问 AI 默认隐藏（Kconfig 开关），代码完整保留，menuconfig 一键回开。</p></div>
+      <div class="card">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h6v18H6a2 2 0 0 1-2-2V5zm18 0v14a2 2 0 0 1-2 2h-6V3h6a2 2 0 0 1 2 2z" fill="currentColor"/></svg>
+        <h3>微信读书，无缝衔接</h3>
+        <p>书架上有什么、读到哪一页、划了哪些线，设备上实时同步。手机读一半，拿起设备接着读。</p>
+      </div>
+      <div class="card">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M12 3a5 5 0 0 0-5 5c0 2.4 1.7 4.4 4 4.9V19a1 1 0 0 0 2 0v-6.1c2.3-.5 4-2.5 4-4.9a5 5 0 0 0-5-5zM7 13H4a1 1 0 0 0 0 2h3a1 1 0 0 0 0-2zm13 0h-3a1 1 0 0 0 0 2h3a1 1 0 0 0 0-2zM7 17H4a1 1 0 0 0 0 2h3a1 1 0 0 0 0-2zm13 0h-3a1 1 0 0 0 0 2h3a1 1 0 0 0 0-2z" fill="currentColor"/></svg>
+        <h3>网盘书库，直接读</h3>
+        <p>Reeden 书库通过 WebDAV/S3 同步到你的网盘，设备直接下载阅读，进度双向同步（开发中）。</p>
+      </div>
+      <div class="card">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M2 16h4v4H2v-4zm7-6h4v10H9V10zm7-6h4v16h-4V4z" fill="currentColor"/></svg>
+        <h3>4G + WiFi 双在线</h3>
+        <p>内置 4G 物联卡开机即联网，WiFi 下载更快。出差、通勤、露营，书永远在手边。</p>
+      </div>
+      <div class="card">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 2.4 1.2 4.5 3 5.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3c1.8-1.3 3-3.4 3-5.7a7 7 0 0 0-7-7zM9 21h6v1a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-1z" fill="currentColor"/></svg>
+        <h3>官方级省电</h3>
+        <p>待机浅睡、自动断网、按页声明保网——官方电源管理全套保留，一次充电读几周。</p>
+      </div>
+      <div class="card">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm11 0h2v2h-2v-2zm4 0h1v2h-1v-2zm-4 4h2v3h-2v-3zm4 1h1v2h-1v-2z" fill="currentColor" opacity=".9"/></svg>
+        <h3>局域网剪贴板</h3>
+        <p>电脑浏览器一键给设备"喂"长文本：API Key、配置参数、备忘，告别墨水屏敲键盘。</p>
+      </div>
+      <div class="card">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <h3>100% 开源</h3>
+        <p>MIT 协议，代码全公开。功能开关化裁剪，想加什么自己改，欢迎提 PR。</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="tutorials">
+    <h2>上手教程</h2>
+    <div class="grid two">
+      <a class="card link" href="tutorial-weread.html">
+        <h3>微信读书同步设置 →</h3>
+        <p>3 分钟拿到 API Key，设备上一键完成绑定，书架进度随身带。</p>
+      </a>
+      <a class="card link" href="tutorial-clipboard.html">
+        <h3>局域网剪贴板使用 →</h3>
+        <p>电脑浏览器给设备发 Key、发配置、发备忘的保姆级教程。</p>
+      </a>
     </div>
   </section>
 
   <section>
-    <h2>与官方固件对比</h2>
+    <h2>和官方固件比，多了什么</h2>
     <table class="cmp">
       <thead><tr><th>功能</th><th>听趣S1</th><th>官方固件</th></tr></thead>
       <tbody>
-        <tr><td>本地阅读（.ebook/.epub/.txt）</td><td class="y">✓</td><td class="y">✓</td></tr>
-        <tr><td>微信读书书架/进度/笔记同步</td><td class="y">✓ 官方 API</td><td class="n">✗</td></tr>
-        <tr><td>Reeden WebDAV 同步</td><td class="y">开发中</td><td class="n">✗</td></tr>
-        <tr><td>4G 内外卡 / WiFi / 蓝牙音频</td><td class="y">✓ 全保留</td><td class="y">✓</td></tr>
-        <tr><td>电源管理（待机/自动断网）</td><td class="y">✓ 官方全套</td><td class="y">✓</td></tr>
-        <tr><td>壁纸待机 / USB 传书 / WiFi 传书</td><td class="y">✓ 全保留</td><td class="y">✓</td></tr>
-        <tr><td>百问 AI 语音 / 每日清单</td><td class="o">隐藏可回开¹</td><td class="y">内置²</td></tr>
-        <tr><td>云端依赖</td><td class="y">无（仅只读官方接口）</td><td class="o">官方云</td></tr>
-        <tr><td>开源</td><td class="y">✓ MIT</td><td class="n">源码开放但云端闭源</td></tr>
+        <tr><td>微信读书书架 / 进度 / 笔记同步</td><td class="y">✓ 已上线</td><td class="n">✗</td></tr>
+        <tr><td>Reeden / WebDAV 网盘书库</td><td class="o">开发中</td><td class="n">✗</td></tr>
+        <tr><td>本地阅读 · 4G/WiFi/蓝牙 · 壁纸待机</td><td class="y">✓ 全保留</td><td class="y">✓</td></tr>
+        <tr><td>省电管理（待机 / 自动断网）</td><td class="y">✓ 官方同款</td><td class="y">✓</td></tr>
+        <tr><td>局域网剪贴板（电脑喂 Key）</td><td class="y">✓</td><td class="n">✗</td></tr>
+        <tr><td>百问 AI 语音助手</td><td class="o">隐藏可回开¹</td><td class="y">✓ 需官方云²</td></tr>
+        <tr><td>无云端依赖</td><td class="y">✓</td><td class="o">依赖官方服务</td></tr>
+        <tr><td>开源</td><td class="y">✓ MIT</td><td class="n">云端闭源</td></tr>
       </tbody>
     </table>
-    <p class="note">¹ 开源版云端 endpoint 留空，这些功能本就无法使用；入口隐藏、代码保留。 ² 需官方云服务。</p>
+    <p class="note">¹ 开源版官方云端地址留空，语音助手本就无法使用，入口默认隐藏、代码保留可随时回开。 ² 官方语音服务需付费/激活，且绑定内置 4G 卡。</p>
   </section>
 
   <section>
-    <h2>构建与刷机</h2>
-    <ol class="steps">
-      <li>WSL2 + Ubuntu 24.04，安装 ESP-IDF v6.1（target esp32s31）</li>
-      <li><code>git clone https://github.com/TaoRone/Metalio-E-Ink4-Plus-TingQuS1.git</code></li>
-      <li>构建目录需纯 ASCII 路径：<code>idf.py -B ~/build/tingqu-s1 build</code>（工程路径含非 ASCII 字符会触发 picolibc specs 路径 bug）</li>
-      <li><code>BUILD_DIR=~/build/tingqu-s1 ESPTOOL_CHIP=esp32s31 bash merge_firmware.sh</code></li>
-      <li>USB 刷入全量镜像，或 SD 卡放置固件卡刷。首次刷机前建议备份原厂 16MB 固件。</li>
-    </ol>
-    <p class="note">详细文档见 GitHub README 与 docs/。</p>
+    <h2>路线图</h2>
+    <ul class="roadmap">
+      <li class="done"><b>M1 · 微信读书官方 API 同步</b><span>书架 / 进度 / 笔记 / 统计 · 真机已上线</span></li>
+      <li class="doing"><b>体验打磨</b><span>图书详情页 · 封面显示 · 书架缓存 · 本地书进度匹配</span></li>
+      <li><b>M2 · 微信读书在线阅读</b><span>设备上直接读微信读书的书（实验功能，受官方政策影响）</span></li>
+      <li><b>Phase 3 · Reeden 生态</b><span>通用 WebDAV/S3 客户端，书库下载 + 进度双向同步</span></li>
+      <li><b>持续</b><span>官网 / 反馈收集 / 上游固件同步 / 社区分发（burner）</span></li>
+    </ul>
   </section>
 
   <section id="feedback">
     <h2>意见反馈</h2>
-    <p class="dim">固件体验、Bug、功能建议都欢迎。联系方式选填，方便我们跟进。</p>
+    <p class="dim">用得不爽？有 Bug？想要新功能？告诉我们。联系方式选填，方便跟进。</p>
     <form id="fb-form">
       <div class="row">
         <input name="nickname" placeholder="昵称（选填）" maxlength="32">
-        <input name="contact" placeholder="联系方式：邮箱 / QQ / 微信（选填）" maxlength="64">
+        <input name="contact" placeholder="邮箱 / QQ / 微信（选填）" maxlength="64">
       </div>
       <textarea name="content" placeholder="你的反馈…（必填）" maxlength="2000" required></textarea>
       <button class="btn" type="submit">提交反馈</button>
@@ -87,7 +131,9 @@
 <footer>
   <div class="wrap">
     <p>听趣S1 · 开源固件 · MIT License · 与 Metalio / CloudZao / 微信读书 / Reeden 无隶属关系</p>
-    <p class="dim">微信读书功能基于腾讯官方开放的 Agent API，需用户自行获取 API Key。</p>
+    <p class="dim">微信读书功能基于腾讯官方开放接口，需用户自行获取 API Key ·
+    产品图来自官方开源仓库（MIT）</p>
+    <p><a href="https://github.com/TaoRone/Metalio-E-Ink4-Plus-TingQuS1" target="_blank" rel="noopener">GitHub 仓库</a> · <a href="build.html">开发者文档</a></p>
   </div>
 </footer>
 <script src="assets/site.js"></script>

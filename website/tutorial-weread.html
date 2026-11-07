@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>获取微信读书 API Key · 听趣S1</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="wrap prose">
+  <p><a href="index.html">← 返回首页</a></p>
+  <h1>微信读书同步设置教程</h1>
+  <p class="dim">全程约 3 分钟。Key 只存在你的设备本地，我们不会收集。</p>
+
+  <h2>第 1 步：获取 API Key</h2>
+  <ol>
+    <li>电脑或手机浏览器打开 <a href="https://weread.qq.com" target="_blank" rel="noopener">微信读书官网</a>，扫码登录你的账号</li>
+    <li>点击右上角头像 → <b>设置</b>（或「账号」页）</li>
+    <li>找到 <b>「AI 助手」/「开放平台」/「API」</b> 入口（2026 年 5 月起官方开放）</li>
+    <li>按页面提示用<b>微信扫码授权</b>，生成 API Key</li>
+    <li>复制 Key（形如 <code>wrk-xxxxxxxx</code>，共约 40 位），先存到电脑的记事本里</li>
+  </ol>
+
+  <h2>第 2 步：设备连上 WiFi</h2>
+  <ol>
+    <li>设备：<b>设置 → 网络 → WiFi</b>，选择你家网络并输入密码</li>
+  </ol>
+
+  <h2>第 3 步：一键把 Key 发给设备（推荐）</h2>
+  <ol>
+    <li>设备首页打开 <b>「局域网剪贴板」</b>，屏幕会显示一个网址，形如 <code>http://192.168.x.x:8080</code></li>
+    <li>电脑浏览器打开该网址（详细图文见 <a href="tutorial-clipboard.html">剪贴板教程</a>）</li>
+    <li>把 Key 粘贴到「粘贴位 1」，点 <b>「设为微信读书Key」</b> —— 完成！</li>
+  </ol>
+
+  <h2>备选：在设备上手动输入</h2>
+  <ol>
+    <li>打开 <b>「微信读书」</b>应用，点底部 <b>「API Key」</b></li>
+    <li>用屏幕键盘输入（<code>SHIFT</code> 切换大小写）</li>
+    <li>如果剪贴板里存过 Key，直接按 <b>「USEKEY」</b> 一键导入</li>
+  </ol>
+
+  <h2>第 4 步：看书架</h2>
+  <p>回到「微信读书」应用，稍等几秒，你的书架就会同步下来。之后每次打开自动刷新（3 秒节流）。</p>
+
+  <div class="callout">
+    <b>常见问题</b>
+    <ul>
+      <li><b>同步失败：</b>确认设备网络正常（屏幕顶部有 WiFi/4G 图标）；微信读书官网的 Key 是否被重置过</li>
+      <li><b>有些书不显示进度：</b>官方 API 对免费/试读书籍的进度字段可能为空</li>
+      <li><b>Key 安全：</b>Key 相当于你的微信读书账号凭证，请勿分享给他人</li>
+    </ul>
+  </div>
+</main>
+<footer><div class="wrap"><p class="dim">听趣S1 · 与微信读书无隶属关系</p></div></footer>
+</body>
+</html>

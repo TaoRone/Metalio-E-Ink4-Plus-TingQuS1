@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>开发者文档 · 听趣S1</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="wrap prose">
+  <p><a href="index.html">← 返回首页</a></p>
+  <h1>开发者文档</h1>
+  <p class="dim">构建、刷机、参与开发。需要基础的 Linux 命令行经验。</p>
+
+  <h2>环境要求</h2>
+  <ul>
+    <li>WSL2 + Ubuntu 24.04（或任意 Linux / macOS）</li>
+    <li>ESP-IDF <b>v6.1</b>（必须精确匹配，target <code>esp32s31</code>）</li>
+    <li>USB 数据线（注意避开仅充电线）</li>
+  </ul>
+
+  <h2>安装 ESP-IDF</h2>
+  <pre class="code">git clone -b v6.1 --recursive https://github.com/espressif/esp-idf.git ~/esp/v6.1
+cd ~/esp/v6.1 && ./install.sh esp32s31 && . ./export.sh</pre>
+
+  <h2>克隆与构建</h2>
+  <pre class="code">git clone https://github.com/TaoRone/Metalio-E-Ink4-Plus-TingQuS1.git
+cd Metalio-E-Ink4-Plus-TingQuS1
+
+# 重要：构建目录必须是纯 ASCII 路径。
+# 工程路径含中文/空格会触发 picolibc specs 路径 bug（gcc 读 specs 失败）。
+idf.py -B ~/build/tingqu-s1 build</pre>
+
+  <h2>合并完整固件</h2>
+  <pre class="code">BUILD_DIR=~/build/tingqu-s1 ESPTOOL_CHIP=esp32s31 bash merge_firmware.sh
+# 产物：firmware/metalio-e-ink4-2.0.74.bin（约 16MB 全量镜像）</pre>
+
+  <h2>刷机</h2>
+  <pre class="code"># USB 刷入（设备正常开机即可，esptool 会自动进下载模式）
+idf.py -p /dev/ttyACM0 flash
+
+# 或：把 firmware/metalio-e-ink4-2.0.74.bin 拷到 SD 卡根目录，
+# 插卡重启，按屏幕提示确认卡刷</pre>
+
+  <h2>首次刷机前</h2>
+  <ul>
+    <li><b>备份原厂固件</b>：<code>esptool read-flash 0x0 0x1000000 stock.bin</code>，后悔药</li>
+    <li>WiFi 配置可在 SD 卡放 <code>metalio/e-ink/settings/wificonfig.json</code> 开机自动导入</li>
+  </ul>
+
+  <h2>功能开关（menuconfig）</h2>
+  <table class="cmp">
+    <thead><tr><th>配置项</th><th>默认</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>TINGQU_HIDE_TASK_APP</code></td><td>y</td><td>隐藏每日清单（软裁剪，代码保留）</td></tr>
+      <tr><td><code>TINGQU_HIDE_ASSISTANT_APP</code></td><td>y</td><td>隐藏百问 AI 入口</td></tr>
+      <tr><td><code>MBEDTLS_SSL_RENEGOTIATION</code></td><td><b>必须关闭</b></td><td>esp-ml307 组件要求，否则 TLS 内存损坏</td></tr>
+    </tbody>
+  </table>
+
+  <h2>已知坑</h2>
+  <ul>
+    <li><b>工程路径含中文</b> → 构建目录外置（如上）；这是 picolibc specs 的已知问题</li>
+    <li><b>微信读书 HTTPS</b> → 必须用 SDK <code>esp_http_client</code>；板载 <code>HttpClient/EspSsl</code> 栈对公网 TLS 有写入挂起问题（详见 git log ad93d19）</li>
+    <li><b>cJSON 大 JSON</b> → 项目内已封装 <code>CjsonPsramGuard</code>，解析 ~100KB JSON 前切 PSRAM 钩子</li>
+    <li>新加源码目录后需 <code>idf.py reconfigure</code>（CMake GLOB 不自动感知新文件）</li>
+  </ul>
+
+  <h2>参与贡献</h2>
+  <ul>
+    <li>问题反馈：<a href="index.html#feedback">官网反馈</a> 或 GitHub Issues</li>
+    <li>提交 PR：体验修复 → <code>main</code>；大功能 → 先开 Issue 讨论</li>
+    <li>设备相关日志Tag：<code>WereadSvc</code> <code>WereadScreen</code> <code>Lansync</code> <code>PowerPolicy</code></li>
+  </ul>
+</main>
+<footer><div class="wrap"><p class="dim">听趣S1 · MIT License</p></div></footer>
+</body>
+</html>

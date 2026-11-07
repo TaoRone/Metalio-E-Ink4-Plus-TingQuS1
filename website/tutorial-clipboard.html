@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>局域网剪贴板使用教程 · 听趣S1</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="wrap prose">
+  <p><a href="index.html">← 返回首页</a></p>
+  <h1>局域网剪贴板使用教程</h1>
+  <p class="dim">设备连上家里的 WiFi 后，电脑浏览器就能直接给设备"喂"文字：API Key、配置参数、备忘。全程 1 分钟。</p>
+
+  <h2>第 1 步：打开剪贴板页面</h2>
+  <ol>
+    <li>确认设备已连 WiFi（<b>设置 → 网络 → WiFi</b>）</li>
+    <li>设备首页打开 <b>「局域网剪贴板」</b> 应用</li>
+    <li>屏幕上会显示一个网址，例如：<code>http://192.168.31.21:8080</code></li>
+  </ol>
+
+  <h2>第 2 步：电脑访问</h2>
+  <ol>
+    <li>电脑连<b>同一个路由器</b>（有线/无线都行）</li>
+    <li>浏览器地址栏输入屏幕上的网址，回车</li>
+    <li>看到「听趣S1 · 局域网剪贴板」页面即成功</li>
+  </ol>
+
+  <h2>第 3 步：使用三个粘贴位</h2>
+  <table class="cmp">
+    <thead><tr><th>操作</th><th>效果</th></tr></thead>
+    <tbody>
+      <tr><td>粘贴内容 → 点「保存到粘贴位N」</td><td>存入设备，长期有效（重启不丢）</td></tr>
+      <tr><td>点「设为微信读书Key」</td><td>该位置内容立即作为微信读书 API Key 生效并触发同步</td></tr>
+      <tr><td>设备键盘上按 PASTE1/2/3</td><td>把对应粘贴位内容插入当前输入</td></tr>
+      <tr><td>设备键盘上按 USEKEY</td><td>自动扫描三个位置，首个合法 Key 直接采用</td></tr>
+    </tbody>
+  </table>
+
+  <h2>典型场景</h2>
+  <ul>
+    <li><b>配置微信读书：</b>电脑复制 Key → 粘贴位 1 → 点「设为微信读书Key」→ 完成</li>
+    <li><b>存 WiFi 密码备忘：</b>粘到粘贴位 2，设备随时可看（键盘 PASTE2 插入）</li>
+    <li><b>预填 Reeden WebDAV 配置（Phase 3）：</b>服务器地址/账号一次粘好，设备端一键带入</li>
+  </ul>
+
+  <div class="callout">
+    <b>打不开页面？</b>
+    <ul>
+      <li>确认电脑和设备在<b>同一个局域网</b>（公司/校园网可能有隔离，换家里网络试）</li>
+      <li>确认设备停留在「局域网剪贴板」页面（离开页面服务自动关闭）</li>
+      <li>路由器开启了 AP 隔离的，关闭该功能</li>
+    </ul>
+  </div>
+</main>
+<footer><div class="wrap"><p class="dim">听趣S1</p></div></footer>
+</body>
+</html>

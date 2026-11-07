@@ -1,13 +1,11 @@
 <?php
-// 听趣S1 官网 · 反馈查看后台（HTTP Basic 认证）
-const DB_PATH = '/home/wwwroot/lnmp01/tingqu-data/feedback.db';
+// 听趣S1 官网 · 反馈查看后台（HTTP Basic 认证，MySQL）
+require __DIR__ . '/../api/db.php';
 const ADMIN_HASH = '__ADMIN_HASH__';   // 部署时由 PHP CLI 注入
 
-$valid = false;
-if (isset($_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW'])) {
-    $valid = password_verify($_SERVER['PHP_AUTH_PW'], ADMIN_HASH)
-          && $_SERVER['PHP_AUTH_USER'] === 'admin';
-}
+$valid = isset($_SERVER['PHP_AUTH_USER'], $_SERVER['PHP_AUTH_PW'])
+      && $_SERVER['PHP_AUTH_USER'] === 'admin'
+      && password_verify($_SERVER['PHP_AUTH_PW'], ADMIN_HASH);
 if (!$valid) {
     header('WWW-Authenticate: Basic realm="tingqu-feedback"');
     http_response_code(401);
@@ -16,10 +14,9 @@ if (!$valid) {
 
 header('Content-Type: text/html; charset=utf-8');
 $rows = [];
-if (file_exists(DB_PATH)) {
-    $db = new PDO('sqlite:' . DB_PATH);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $rows = $db->query('SELECT * FROM feedback ORDER BY id DESC LIMIT 500')->fetchAll(PDO::FETCH_ASSOC);
+$db = tingqu_db();
+if ($db !== null) {
+    $rows = $db->query('SELECT * FROM feedback ORDER BY id DESC LIMIT 500')->fetchAll();
 }
 ?>
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
