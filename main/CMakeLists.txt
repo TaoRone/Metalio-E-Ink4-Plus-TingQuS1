@@ -35,6 +35,13 @@ file(GLOB BOARD_SRCS
 file(GLOB WORKBUDDY_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/workbuddy/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/workbuddy_screen/*.cc")
 
+# 微信读书（听趣S1 M1）：服务层 + 书架页面
+file(GLOB WEREAD_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/weread/*.cc"
+    "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/weread_screen/*.cc")
+
+# 局域网剪贴板（听趣S1）：:8080 小服务 + 3 槽位
+file(GLOB LANSYNC_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/lansync_screen/*.cc")
+
 file(GLOB HOME_SCREEN_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/home_screen/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/home_screen/pixel/*.cc"
@@ -188,6 +195,8 @@ idf_component_register(
         ${OTA_UI_SRCS}
         ${HOME_SCREEN_SRCS}
         ${WORKBUDDY_SRCS}
+        ${WEREAD_SRCS}
+        ${LANSYNC_SRCS}
         ${SETTINGS_SCREEN_SRCS}
         ${BLUETOOTH_SCREEN_SRCS}
         ${NETWORK_SCREEN_SRCS}

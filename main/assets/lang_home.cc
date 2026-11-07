@@ -368,6 +368,23 @@
     X(SETTINGS_NET_REBOOT_HINT, "切换后设备将自动重启", "Device reboots after switching") \
     X(SETTINGS_NET_SIM_EXT, "外置卡", "External SIM") \
     X(SETTINGS_NET_SIM_INT, "内置卡", "Internal SIM") \
+    X(HOME_APP_WEREAD, "微信读书", "WeRead") \
+    X(WEREAD_TITLE, "微信读书书架", "WeRead Shelf") \
+    X(WEREAD_REFRESH, "刷新", "Refresh") \
+    X(WEREAD_LOADING, "正在同步书架…", "Syncing shelf…") \
+    X(WEREAD_EMPTY, "书架为空", "Shelf is empty") \
+    X(WEREAD_NO_KEY, "未配置 API Key，点下方按钮输入", "No API key. Tap the button below") \
+    X(WEREAD_SYNC_FAIL, "同步失败", "Sync failed") \
+    X(WEREAD_NET_NOT_READY, "网络未就绪", "Network not ready") \
+    X(HOME_APP_LANSYNC, "局域网剪贴板", "LAN Clipboard") \
+    X(LANSYNC_TITLE, "局域网剪贴板", "LAN Clipboard") \
+    X(LANSYNC_NO_WIFI, "未连接 WiFi", "WiFi not connected") \
+    X(LANSYNC_URL_HINT, "电脑浏览器访问以下地址", "Open this URL on your PC") \
+    X(LANSYNC_SLOT_EMPTY, "（空）", "(empty)") \
+    X(LANSYNC_STARTED, "服务已启动", "Server started") \
+    X(LANSYNC_SERVER_FAIL, "服务启动失败", "Server failed") \
+    X(LANSYNC_KEY_OK, "微信读书 Key：已配置", "WeRead key: configured") \
+    X(LANSYNC_KEY_NONE, "微信读书 Key：未配置", "WeRead key: not set") \
     X(SETTINGS_NET_SIM_TASK_FAIL, "无法启动 SIM 切换任务", "Cannot start SIM switch task") \
     X(SETTINGS_NET_SIM_TITLE, "SIM 卡", "SIM") \
     X(SETTINGS_NET_SWITCHED_FMT, "已切换到%s", "Switched to %s") \
