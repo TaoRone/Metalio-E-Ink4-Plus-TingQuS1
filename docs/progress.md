@@ -35,7 +35,28 @@
     阅读时长页（设置→第4页）手动「上传进度/拉取进度」，失败回执上屏（网络/凭据/无记录）
   - 断网手动同步会主动起网（EnsureNetworkReady 30s 等 4G 附着），有网自然刷新保网窗口
 - **局域网剪贴板**：首页卡片，:8080 服务，网页三槽位 + 一键设 Key（NVS clipboard）；槽位
-  已加 RAM 缓存（见下方 Flash 栈铁律）
+  已加 RAM 缓存（见下方 Flash 栈铁律）；接口 `/api/status` 明文回槽位（调试可取 weread Key）
+- **M2 在线阅读（实验，进行中）**：
+  - 墨水屏扫码登录全通：wxticket→qrconnect→轮询→/login 换 {vid,accessToken,refreshToken}
+    （BOOX 设备身份 deviceType=3，ROM ets_sha256 签名；vid 是**数字型**不是字符串）；
+    令牌存 NVS weread/ink_*，401 自动刷新重试；登录成功后续操作免扫码
+  - 章节目录 POST /book/chapterInfos 通（body 必须含 synckeys/updateTimes/maxfreeIdx 数组，
+    缺字段直接 499）；章节目录含 files[]（章节 xhtml 路径列表）
+  - **正文端点未攻克**：8 路候选全 404（无认证也 404，路径与认证类型强绑定）；
+    weread-exporter 等开源实现走浏览器渲染抓取，无干净 API；weread-omni 不含正文。
+    下一步候选：网页 Cookie（wr_vid/wr_skey）+ /book/chapterContent 验证；或抓包真实墨水屏 App
+  - `.ebook` 合成器就绪（SPEC v1，未压缩分块省 app 体积），正文一通即可全链路
+  - 调试利器：`py -m esptool read-flash 0x9000 0x4000` dump NVS 可提取 ink_* 令牌，
+    PC 直连 i.weread.qq.com 探测接口（2026-11-08 实战验证）
+- **首页卡片**：顺序按用户要求（设置/阅读/微信读书/KOReader/剪贴板/传输/壁纸/workbuddy），
+  KOReader/剪贴板图标改用 teacher/task 区分云图标
+- **分区表变更（v1/16m.csv，社区版必须整刷）**：ota_0/ota_1 0x510000→0x530000×2
+  （M2 使 app 增至 ~5.31MB，超旧 ota_0 会 boot loop）；resources→0x50000@0xAE0000；
+  font_data 0x4C3000@0xB30000；coredump 0x8000@0xFF6000。app-only 刷机前提=设备已是本布局
+- **微信读书 M1 字段修复（真实报文核实）**：getprogress 的 progress/readingTime 在 **book
+  子对象**（不在顶层，顶层没有 → 之前全显示未知）；bookmarklist 划线在 **updated 数组**
+  （不是 bookmarks/items）；详情页现显示 阅读进度/阅读时长/划线笔记 三行。
+  注意：该 Agent API 对 Reeden 端产生的阅读可能无数据（实测在读书也全 0），属 API 边界
 - **官网 V2**：https://readere4p.taor.site （静态站 + MySQL 反馈 + 教程页 + 路线图）
 - **关键修复**：esp-tls 需 SetRequestDeadline；cJSON 大 JSON 用 PSRAM 钩子(ParseShelfBody 等)；
   联网页 PowerNeed 保网(ForegroundNetwork/OtaDownload)；`MBEDTLS_SSL_RENEGOTIATION` 必须关

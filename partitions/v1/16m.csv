@@ -1,14 +1,16 @@
 # ESP-IDF Partition Table（16MB）· 听趣S1 调整：
-# ota_0/ota_1 5M -> 5M+64K（应用体积增长）；
-# font_data 5M -> 0x4C2000（实际 fontpack 4,985,431B，余量 7.6KB，超出会在合并时报错）
+# ota_0/ota_1 0x510000 -> 0x530000（M2 在线阅读使 app 增至 ~5.31MB；64K 对齐）；
+# resources 400K -> 0x50000（实际 resources.bin 308,643B）；
+# coredump 64K -> 0x8000（实测单 dump ~3KB）；
+# font_data 0x4C2000 -> 0x4C3000（实际 fontpack 4,985,431B，余量 3.5KB，超出会在合并时报错）
 # Name,    Type, SubType,  Offset,   Size, Flags
 nvs,       data, nvs,      0x9000,   16K,
 otadata,   data, ota,      0xd000,   8K,
 phy_init,  data, phy,      0xf000,   4K,
 model,     data, spiffs,   0x10000,  400K,
-ota_0,     app,  ota_0,    0x80000,  0x510000,
-ota_1,     app,  ota_1,    0x590000, 0x510000,
-resources, data, spiffs,   0xaa0000, 400K,
+ota_0,     app,  ota_0,    0x80000,  0x530000,
+ota_1,     app,  ota_1,    0x5b0000, 0x530000,
+resources, data, spiffs,   0xae0000, 0x50000,
 # ebook 24x24 1bpp 点阵（assets/epd_font24.bin ≈1.48MiB，mmap 零拷贝）
-font_data, data, 0x40,     0xb04000, 0x4C2000,
-coredump,  data, coredump, 0xfc6000, 64K,
+font_data, data, 0x40,     0xb30000, 0x4C3000,
+coredump,  data, coredump, 0xff6000, 0x8000,

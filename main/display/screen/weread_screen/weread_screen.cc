@@ -13,6 +13,11 @@
 #include "epd_content_policy.h"
 #include "reader/image_util.h"
 #include "reader/reader_types.h"
+#include "weread_qr_screen.h"
+
+#include <weread/weread_ink.h>
+#include <weread/weread_online.h>
+#include "book_screen/book_screen.h"
 
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -84,6 +89,7 @@ std::atomic<int64_t> s_last_sync_us{0};
 void OnRowClicked(lv_event_t* e);
 void OpenDetail(int idx);
 void BackToShelf();
+void OnOnlineReadClicked(lv_event_t* e);
 void RenderPage();
 void AttachThumb(lv_obj_t* box, const reader::RasterImage& img, int box_w, int box_h);
 void PatchRowThumb(int index);
@@ -865,6 +871,7 @@ void OnModeClicked(lv_event_t* /*e*/) {
 struct DetailResultMsg {
     int idx = -1;
     int progress = -1;   // -1 = 未知
+    int64_t reading_sec = -1;
     int bookmarks = -1;
     std::string err;
 };
@@ -887,9 +894,17 @@ void DetailApplyInfo(void* user_data) {
         lv_label_set_text(s_d_info, "进度获取失败（网络或接口限制）");
         return;
     }
-    char buf[192];
-    std::snprintf(buf, sizeof(buf), "阅读进度: %s\n划线/笔记: %s",
-                  msg->progress >= 0 ? (std::to_string(msg->progress) + "%").c_str() : "未知",
+    std::string time_text = "暂无记录";
+    if (msg->reading_sec > 0) {
+        const int64_t h = msg->reading_sec / 3600;
+        const int m = static_cast<int>((msg->reading_sec % 3600) / 60);
+        time_text = h > 0 ? std::to_string(h) + "小时" + std::to_string(m) + "分"
+                          : std::to_string(m) + "分钟";
+    }
+    char buf[224];
+    std::snprintf(buf, sizeof(buf), "阅读进度: %s\n阅读时长: %s\n划线/笔记: %s",
+                  msg->progress > 0 ? (std::to_string(msg->progress) + "%").c_str() : "暂无记录",
+                  time_text.c_str(),
                   msg->bookmarks >= 0 ? (std::to_string(msg->bookmarks) + " 条").c_str() : "未知");
     lv_label_set_text(s_d_info, buf);
 }
@@ -970,6 +985,18 @@ void OpenDetail(int idx) {
     lv_obj_align(info, LV_ALIGN_TOP_LEFT, kPad * 2, 56 + kCoverBoxH + 24);
     s_d_info = info;
 
+    lv_obj_t* online = lv_btn_create(scr);
+    lv_obj_set_size(online, LV_HOR_RES - kPad * 4, 52);
+    lv_obj_set_style_bg_color(online, lv_color_black(), 0);
+    lv_obj_set_style_text_font(online, UiFont(), 0);
+    lv_obj_align(online, LV_ALIGN_BOTTOM_LEFT, kPad * 2, -(kPad * 2 + 52 + 12));
+    lv_obj_t* ol = lv_label_create(online);
+    lv_label_set_text(ol, "在线阅读");
+    lv_obj_set_style_text_font(ol, UiFont(), 0);
+    lv_obj_set_style_text_color(ol, lv_color_white(), 0);
+    lv_obj_center(ol);
+    lv_obj_add_event_cb(online, OnOnlineReadClicked, LV_EVENT_CLICKED, nullptr);
+
     lv_obj_t* hint = lv_label_create(scr);
     lv_label_set_text(hint, "提示: 在线阅读(M2)即将提供；可用传书导入本地 epub/txt 阅读");
     lv_obj_set_style_text_font(hint, UiFont(), 0);
@@ -998,6 +1025,8 @@ void OpenDetail(int idx) {
             std::string err;
             msg->progress = weread::FetchProgressPercent(book_id, err);
             err.clear();
+            msg->reading_sec = weread::FetchReadingTimeSec(book_id, err);
+            err.clear();
             weread::FetchBookmarkCount(book_id, msg->bookmarks, err);
         } while (false);
         PowerPolicy::GetInstance().Release(PowerNeed::OtaDownload);
@@ -1008,6 +1037,51 @@ void OpenDetail(int idx) {
 void OnRowClicked(lv_event_t* e) {
     const intptr_t idx = reinterpret_cast<intptr_t>(lv_event_get_user_data(e));
     OpenDetail(static_cast<int>(idx));
+}
+
+// M2 在线阅读（实验）：未登录先走墨水屏扫码登录，已登录直接拉正文合成 .ebook 并打开
+void OnOnlineReadClicked(lv_event_t* /*e*/);
+
+struct OnlineUiMsg {
+    weread::online::UiEvent ev;
+};
+
+void OnlineUiApply(void* user_data) {
+    std::unique_ptr<OnlineUiMsg> msg(static_cast<OnlineUiMsg*>(user_data));
+    if (msg == nullptr) return;
+    if (s_d_info != nullptr && lv_obj_is_valid(s_d_info)) {
+        lv_label_set_text(s_d_info, msg->ev.message.c_str());
+    }
+    if (msg->ev.type == weread::online::UiEvent::Type::kDone) {
+        ScreenShowToast("合成完成，正在打开…");
+        BookScreen::OpenBookByPath(msg->ev.message.c_str());
+    } else if (msg->ev.type == weread::online::UiEvent::Type::kError) {
+        ScreenShowToast(msg->ev.message.c_str());
+    }
+}
+
+void StartOnlineForCurrentBook() {
+    if (s_detail_idx < 0 || s_detail_idx >= static_cast<int>(s_books.size())) return;
+    const weread::ShelfBook& b = s_books[static_cast<size_t>(s_detail_idx)];
+    weread::online::SetUiHandler([](const weread::online::UiEvent& ev) {
+        auto* msg = new (std::nothrow) OnlineUiMsg{ev};
+        if (msg == nullptr) return;
+        if (!ScreenLvAsync(OnlineUiApply, msg)) delete msg;
+    });
+    if (!weread::online::StartOnlineRead(b.book_id, b.title, b.author)) {
+        ScreenShowToast("已有下载在进行中");
+    } else if (s_d_info != nullptr && lv_obj_is_valid(s_d_info)) {
+        lv_label_set_text(s_d_info, "开始在线阅读…");
+    }
+}
+
+void OnOnlineReadClicked(lv_event_t* /*e*/) {
+    if (s_detail_idx < 0 || s_detail_idx >= static_cast<int>(s_books.size())) return;
+    if (!weread::ink::HasCredentials()) {
+        WereadQrScreen::Show(kScreenId, [](void*) { StartOnlineForCurrentBook(); }, nullptr);
+        return;
+    }
+    StartOnlineForCurrentBook();
 }
 
 bool OnVkKey(const char* key) {

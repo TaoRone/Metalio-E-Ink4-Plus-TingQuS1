@@ -78,13 +78,13 @@ void Home_OnAppNameDraw(lv_event_t* e)
         #if !CONFIG_TINGQU_HIDE_ASSISTANT_APP
         {"A:ic_app_home_teacher.spng", Home_AppNameAssistant, AssistantScreen::Create},
         #endif
+        {"A:ic_app_home_setting.spng", Home_AppNameSettings, SettingsScreen::Create},
         {"A:ic_app_home_book.spng", Home_AppNameBook, BookScreen::Create},
         {"A:ic_app_home_book.spng", Home_AppNameWeread, WereadScreen::Create},
-        {"A:ic_app_home_cloud.spng", Home_AppNameKosync, KosyncScreen::Create},
-        {"A:ic_app_home_wallpaper.spng", Home_AppNameWallpaper, WallpaperScreen::Create},
+        {"A:ic_app_home_teacher.spng", Home_AppNameKosync, KosyncScreen::Create},
+        {"A:ic_app_home_task.spng", Home_AppNameLansync, LansyncScreen::Create},
         {"A:ic_app_home_cloud.spng", Home_AppNameCloud, CloudScreen::Create},
-        {"A:ic_app_home_setting.spng", Home_AppNameSettings, SettingsScreen::Create},
-        {"A:ic_app_home_cloud.spng", Home_AppNameLansync, LansyncScreen::Create},
+        {"A:ic_app_home_wallpaper.spng", Home_AppNameWallpaper, WallpaperScreen::Create},
         #if !CONFIG_BOARD_TYPE_METALIO_E_INK4_PLUS_GLOBAL
         {"A:ic_app_home_workbuddy.spng", Home_AppNameWorkBuddy, WorkBuddyScreen::Create},
         #endif
@@ -92,20 +92,21 @@ void Home_OnAppNameDraw(lv_event_t* e)
 
     // 仅对外展示用户可见的应用，保持首页与设计稿一致。
     extern const AppEntry kSlashApps[] = {
+        {"A:ic_app_home_setting.spng", Home_AppNameSettings, SettingsScreen::Create},
         {"A:ic_app_home_book.spng", Home_AppNameBook, BookScreen::Create},
         {"A:ic_app_home_book.spng", Home_AppNameWeread, WereadScreen::Create},
-        {"A:ic_app_home_cloud.spng", Home_AppNameKosync, KosyncScreen::Create},
+        {"A:ic_app_home_teacher.spng", Home_AppNameKosync, KosyncScreen::Create},
+        {"A:ic_app_home_task.spng", Home_AppNameLansync, LansyncScreen::Create},
+        {"A:ic_app_home_cloud.spng", Home_AppNameCloud, CloudScreen::Create},
         {"A:ic_app_home_wallpaper.spng", Home_AppNameWallpaper, WallpaperScreen::Create},
-        {"A:ic_app_home_setting.spng", Home_AppNameSettings, SettingsScreen::Create},
-        {"A:ic_app_home_cloud.spng", Home_AppNameLansync, LansyncScreen::Create},
         #if !CONFIG_TINGQU_HIDE_ASSISTANT_APP
         {"A:ic_app_home_teacher.spng", Home_AppNameAssistant, AssistantScreen::Create},
         #endif
         #if !CONFIG_TINGQU_HIDE_TASK_APP
         {"A:ic_app_home_task.spng", Home_AppNameTask, TaskScreen::Create},
         #endif
-        {"A:ic_app_home_cloud.spng", Home_AppNameCloud, CloudScreen::Create},
         {"A:ic_app_home_setting.spng", Home_AppNameSettings, SettingsScreen::Create},
+        {"A:ic_app_home_cloud.spng", Home_AppNameCloud, CloudScreen::Create},
         #if !CONFIG_BOARD_TYPE_METALIO_E_INK4_PLUS_GLOBAL
         {"A:ic_app_home_workbuddy.spng", Home_AppNameWorkBuddy, WorkBuddyScreen::Create},
         #endif

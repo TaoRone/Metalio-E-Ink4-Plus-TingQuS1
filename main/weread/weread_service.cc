@@ -276,7 +276,7 @@ bool FetchBookmarkCount(const std::string& book_id, int& count, std::string& err
         err = "bad json";
         return false;
     }
-    for (const char* key : {"bookmarks", "items", "list", "data"}) {
+    for (const char* key : {"updated", "bookmarks", "items", "list", "data"}) {
         const cJSON* arr = cJSON_GetObjectItem(root, key);
         if (cJSON_IsArray(arr)) {
             count = cJSON_GetArraySize(arr);
@@ -531,20 +531,41 @@ int FetchProgressPercent(const std::string& book_id, std::string& err) {
         return -1;
     }
     int percent = -1;
-    // 官方返回字段：readingProgress / progress 等，取第一个可用的数值字段
-    const char* kCandidates[] = {"readingProgress", "progress", "readProgress"};
-    for (const char* name : kCandidates) {
-        const cJSON* v = cJSON_GetObjectItem(root, name);
-        if (cJSON_IsNumber(v)) {
-            double p = v->valuedouble;
-            if (p <= 1.0 && p > 0.0) p *= 100.0;  // 0-1 小数 → 百分比
-            percent = static_cast<int>(p + 0.5);
-            break;
+    // 官方字段在 book 子对象：progress（0-100 int；0=无记录）
+    const cJSON* book = cJSON_GetObjectItem(root, "book");
+    if (cJSON_IsObject(book)) {
+        const cJSON* p = cJSON_GetObjectItem(book, "progress");
+        if (cJSON_IsNumber(p)) {
+            double v = p->valuedouble;
+            if (v <= 1.0 && v > 0.0) v *= 100.0;  // 0-1 小数 → 百分比
+            percent = static_cast<int>(v + 0.5);
         }
     }
     cJSON_Delete(root);
     if (percent < 0) err = "no progress field";
     return percent;
+}
+
+// 单本书阅读时长（秒；无记录/失败返回 -1）。字段同在 getprogress 的 book 子对象
+int64_t FetchReadingTimeSec(const std::string& book_id, std::string& err) {
+    std::string body;
+    const std::string params = "\"bookId\":\"" + book_id + "\"";
+    if (!GatewayCall("/book/getprogress", params, body, err)) {
+        return -1;
+    }
+    cJSON* root = cJSON_Parse(body.c_str());
+    if (root == nullptr) {
+        err = "bad json";
+        return -1;
+    }
+    int64_t sec = -1;
+    const cJSON* book = cJSON_GetObjectItem(root, "book");
+    if (cJSON_IsObject(book)) {
+        const cJSON* t = cJSON_GetObjectItem(book, "readingTime");
+        if (cJSON_IsNumber(t)) sec = static_cast<int64_t>(t->valuedouble);
+    }
+    cJSON_Delete(root);
+    return sec;
 }
 
 bool FetchReadStats(ReadStats& out, std::string& err) {

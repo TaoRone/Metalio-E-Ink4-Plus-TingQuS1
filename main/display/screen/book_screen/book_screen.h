@@ -27,6 +27,9 @@ public:
     /** @brief 直接续读最近书籍，无有效记录时返回阅读首页 */
     static lv_obj_t* CreateLatest();
 
+    /** @brief 按绝对路径直接打开阅读（LVGL 线程；替换当前屏）。用于在线阅读合成的 .ebook 等不在书库列表的文件 */
+    static bool OpenBookByPath(const char* abs_path);
+
     /** @brief 正文沉浸阅读中（目录/设置浮层除外）；音量键作翻页 */
     static bool IsReadingActive();
 

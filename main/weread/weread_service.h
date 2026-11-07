@@ -56,6 +56,9 @@ bool ParseShelfBody(const std::string& body, std::vector<ShelfBook>& out, std::s
 // 单本书阅读进度（/book/getprogress），返回阅读进度百分比 0-100；失败返回 -1
 int FetchProgressPercent(const std::string& book_id, std::string& err);
 
+// 单本书阅读时长（/book/getprogress 的 book.readingTime，秒）；失败/无记录返回 -1
+int64_t FetchReadingTimeSec(const std::string& book_id, std::string& err);
+
 // 单本书划线/书签数量（/book/bookmarklist）
 bool FetchBookmarkCount(const std::string& book_id, int& count, std::string& err);
 

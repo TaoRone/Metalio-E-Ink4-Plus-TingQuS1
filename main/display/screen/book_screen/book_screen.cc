@@ -2,6 +2,7 @@
 
 #include "book_screen/book_screen.h"
 #include "book_screen/book_screen_priv.h"
+#include "book_screen/reader/book_reader_body.h"
 #include "book_screen/book_font_runtime.h"
 #include "book_screen/book_geom.h"
 #include "book_screen/shelf/book_home.h"
@@ -20,9 +21,11 @@
 #include <lvgl.h>
 #include <atomic>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <new>
 #include <string>
+#include <sys/stat.h>
 
 #include "assets/lang_config.h"
 #include "SdCardManager.hpp"
@@ -210,4 +213,26 @@ lv_obj_t* BookScreen::Create() {
 
 lv_obj_t* BookScreen::CreateLatest() {
     return CreateBookHome(true);
+}
+
+bool BookScreen::OpenBookByPath(const char* abs_path) {
+    if (abs_path == nullptr || abs_path[0] == '\0') return false;
+    auto& st = Book_State();
+    if (st.reader.opening.load() || ReaderWorkersBusy()) return false;
+    struct stat stt {};
+    if (stat(abs_path, &stt) != 0 || stt.st_size <= 0) return false;
+
+    reader::BookInfo info;
+    info.path = abs_path;
+    // 显示名：文件名去扩展名
+    const char* base = std::strrchr(abs_path, '/');
+    base = (base != nullptr && base[1] != '\0') ? base + 1 : abs_path;
+    info.title = base;
+    const size_t dot = info.title.rfind('.');
+    if (dot != std::string::npos) info.title.resize(dot);
+    info.format = reader::BookFormat::kEbook;
+    info.file_size = static_cast<size_t>(stt.st_size);
+    info.mtime = stt.st_mtime;
+    ScreenLoadReplace(CreateReaderScreen(info));
+    return true;
 }
