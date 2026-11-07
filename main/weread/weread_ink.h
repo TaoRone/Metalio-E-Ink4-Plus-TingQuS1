@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // 微信读书墨水屏登录/认证（听趣S1 M2 在线阅读）
@@ -49,6 +50,18 @@ bool IsLoginBusy();
 bool InkGet(const std::string& path, std::string& body, std::string& err);
 bool InkPost(const std::string& path, const std::string& json_body, std::string& body,
              std::string& err);
+
+// ---------------- AI 大纲（官方 /web/book/briefOutline，网页 Cookie 鉴权） ----------------
+// 网页 Cookie（wr_vid=...; wr_skey=...）存 NVS weread/web_cookie；可由 QR 屏一键粘贴剪贴板
+bool HasWebCookie();
+bool SetWebCookie(const std::string& cookie);
+// 拉取 AI 精读大纲：summary + 主题问答列表（markdown 文本，Network 域调用）
+struct BriefQA {
+    std::string question;
+    std::string answer_md;
+};
+bool FetchBriefOutline(const std::string& book_id, std::string& summary,
+                       std::vector<BriefQA>& qa, std::string& err);
 
 }  // namespace ink
 }  // namespace weread

@@ -14,6 +14,7 @@
 #include "reader/image_util.h"
 #include "reader/reader_types.h"
 #include "weread_qr_screen.h"
+#include "weread_digest_screen.h"
 
 #include <weread/weread_ink.h>
 #include <weread/weread_online.h>
@@ -90,6 +91,7 @@ void OnRowClicked(lv_event_t* e);
 void OpenDetail(int idx);
 void BackToShelf();
 void OnOnlineReadClicked(lv_event_t* e);
+void OnDigestClicked(lv_event_t* e);
 void RenderPage();
 void AttachThumb(lv_obj_t* box, const reader::RasterImage& img, int box_w, int box_h);
 void PatchRowThumb(int index);
@@ -985,8 +987,9 @@ void OpenDetail(int idx) {
     lv_obj_align(info, LV_ALIGN_TOP_LEFT, kPad * 2, 56 + kCoverBoxH + 24);
     s_d_info = info;
 
+    const int btn_w2 = (LV_HOR_RES - kPad * 4 - 12) / 2;
     lv_obj_t* online = lv_btn_create(scr);
-    lv_obj_set_size(online, LV_HOR_RES - kPad * 4, 52);
+    lv_obj_set_size(online, btn_w2, 52);
     lv_obj_set_style_bg_color(online, lv_color_black(), 0);
     lv_obj_set_style_text_font(online, UiFont(), 0);
     lv_obj_align(online, LV_ALIGN_BOTTOM_LEFT, kPad * 2, -(kPad * 2 + 52 + 12));
@@ -996,6 +999,19 @@ void OpenDetail(int idx) {
     lv_obj_set_style_text_color(ol, lv_color_white(), 0);
     lv_obj_center(ol);
     lv_obj_add_event_cb(online, OnOnlineReadClicked, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* digest = lv_btn_create(scr);
+    lv_obj_set_size(digest, btn_w2, 52);
+    lv_obj_set_style_bg_color(digest, lv_color_white(), 0);
+    lv_obj_set_style_border_color(digest, lv_color_black(), 0);
+    lv_obj_set_style_border_width(digest, 2, 0);
+    lv_obj_align(digest, LV_ALIGN_BOTTOM_LEFT, kPad * 2 + btn_w2 + 12, -(kPad * 2 + 52 + 12));
+    lv_obj_t* dl = lv_label_create(digest);
+    lv_label_set_text(dl, "AI 大纲");
+    lv_obj_set_style_text_font(dl, UiFont(), 0);
+    lv_obj_set_style_text_color(dl, lv_color_black(), 0);
+    lv_obj_center(dl);
+    lv_obj_add_event_cb(digest, OnDigestClicked, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t* hint = lv_label_create(scr);
     lv_label_set_text(hint, "提示: 在线阅读(M2)即将提供；可用传书导入本地 epub/txt 阅读");
@@ -1082,6 +1098,17 @@ void OnOnlineReadClicked(lv_event_t* /*e*/) {
         return;
     }
     StartOnlineForCurrentBook();
+}
+
+// AI 大纲（官方 briefOutline，需先在扫码页粘贴网页 Cookie）
+void OnDigestClicked(lv_event_t* /*e*/) {
+    if (s_detail_idx < 0 || s_detail_idx >= static_cast<int>(s_books.size())) return;
+    if (!weread::ink::HasWebCookie()) {
+        ScreenShowToast("请先在扫码页粘贴网页Cookie");
+        return;
+    }
+    const weread::ShelfBook& b = s_books[static_cast<size_t>(s_detail_idx)];
+    WereadDigestScreen::Show(b.book_id.c_str(), b.title.c_str());
 }
 
 bool OnVkKey(const char* key) {

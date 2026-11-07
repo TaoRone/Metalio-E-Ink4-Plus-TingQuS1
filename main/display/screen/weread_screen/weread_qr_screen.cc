@@ -11,6 +11,8 @@
 #include <memory>
 #include <string>
 
+#include "lansync_screen/lansync_screen.h"
+
 // ---------------------------------------------------------------------------
 // 微信读书扫码登录屏（M2 在线阅读登录入口）
 // ---------------------------------------------------------------------------
@@ -86,6 +88,17 @@ void OnCancel(lv_event_t* /*e*/) {
     Close();
 }
 
+// 剪贴板槽 2 → NVS web_cookie（网页端点 /web/* 用；AI 大纲等）
+void OnPasteCookie(lv_event_t* /*e*/) {
+    const std::string slot = LansyncScreen::GetSlot(2);
+    if (weread::ink::SetWebCookie(slot)) {
+        SetStatus("网页Cookie已保存");
+        ScreenShowToast("网页Cookie已保存");
+    } else {
+        SetStatus("槽2无有效Cookie（需含 wr_skey=）");
+    }
+}
+
 }  // namespace
 
 void WereadQrScreen::Show(const char* /*back_screen_id*/, void (*on_done)(void*),
@@ -127,7 +140,7 @@ void WereadQrScreen::Show(const char* /*back_screen_id*/, void (*on_done)(void*)
 
     lv_obj_t* cancel = lv_btn_create(scr);
     lv_obj_set_size(cancel, 200, 56);
-    lv_obj_align(cancel, LV_ALIGN_TOP_MID, 0, 560);
+    lv_obj_set_pos(cancel, (LV_HOR_RES - 200) / 2 - 110, 560);
     lv_obj_set_style_bg_color(cancel, lv_color_black(), 0);
     lv_obj_t* cl = lv_label_create(cancel);
     lv_label_set_text(cl, "取消");
@@ -135,6 +148,20 @@ void WereadQrScreen::Show(const char* /*back_screen_id*/, void (*on_done)(void*)
     lv_obj_set_style_text_color(cl, lv_color_white(), 0);
     lv_obj_center(cl);
     lv_obj_add_event_cb(cancel, OnCancel, LV_EVENT_CLICKED, nullptr);
+
+    // 粘贴网页 Cookie（剪贴板槽 2 → NVS weread/web_cookie，供 AI 大纲等 /web/* 接口）
+    lv_obj_t* paste_ck = lv_btn_create(scr);
+    lv_obj_set_size(paste_ck, 220, 56);
+    lv_obj_set_pos(paste_ck, (LV_HOR_RES - 200) / 2 + 110, 560);
+    lv_obj_set_style_bg_color(paste_ck, lv_color_white(), 0);
+    lv_obj_set_style_border_color(paste_ck, lv_color_black(), 0);
+    lv_obj_set_style_border_width(paste_ck, 2, 0);
+    lv_obj_t* pl = lv_label_create(paste_ck);
+    lv_label_set_text(pl, "粘贴网页Cookie");
+    lv_obj_set_style_text_font(pl, UiFont(), 0);
+    lv_obj_set_style_text_color(pl, lv_color_black(), 0);
+    lv_obj_center(pl);
+    lv_obj_add_event_cb(paste_ck, OnPasteCookie, LV_EVENT_CLICKED, nullptr);
 
     lv_screen_load(scr);
 

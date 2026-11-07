@@ -645,5 +645,83 @@ void CancelQrLogin() { s_login_cancel.store(true); }
 
 bool IsLoginBusy() { return s_login_busy.load(); }
 
+// ---------------------------------------------------------------------------
+// AI 大纲（官方 briefOutline，网页 Cookie 鉴权）
+// ---------------------------------------------------------------------------
+
+bool HasWebCookie() { return !Load("web_cookie").empty(); }
+
+bool SetWebCookie(const std::string& cookie) {
+    if (cookie.empty()) {
+        Save("web_cookie", "");
+        return true;
+    }
+    if (cookie.size() < 20 || cookie.size() > 1500 || cookie.find("wr_skey=") == std::string::npos) {
+        ESP_LOGW(kTag, "reject web cookie (need wr_skey=)");
+        return false;
+    }
+    Save("web_cookie", cookie);
+    return true;
+}
+
+bool FetchBriefOutline(const std::string& book_id, std::string& summary,
+                       std::vector<BriefQA>& qa, std::string& err) {
+    summary.clear();
+    qa.clear();
+    err.clear();
+    const std::string cookie = Load("web_cookie");
+    if (cookie.empty()) {
+        err = "未配置网页Cookie";
+        return false;
+    }
+    HttpResult res;
+    if (!RawRequest("GET", "https://weread.qq.com/web/book/briefOutline?bookId=" + book_id,
+                    std::string("Cookie: ") + cookie + "\nAccept: application/json",
+                    "", res, err,
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120")) {
+        return false;
+    }
+    if (res.status != 200) {
+        err = "http " + std::to_string(res.status);
+        return false;
+    }
+    cJSON* root = cJSON_Parse(res.body.c_str());
+    if (root == nullptr) {
+        err = "bad json";
+        return false;
+    }
+    const cJSON* data = cJSON_GetObjectItem(root, "data");
+    const cJSON* inner = cJSON_IsObject(data) ? cJSON_GetObjectItem(data, "data") : nullptr;
+    if (!cJSON_IsObject(inner)) {
+        err = "no data";
+        cJSON_Delete(root);
+        return false;
+    }
+    const cJSON* sum = cJSON_GetObjectItem(inner, "summary");
+    if (cJSON_IsString(sum)) summary = sum->valuestring;
+    const cJSON* questions = cJSON_GetObjectItem(inner, "question");
+    if (cJSON_IsArray(questions)) {
+        const cJSON* q = nullptr;
+        cJSON_ArrayForEach(q, questions) {
+            const cJSON* query = cJSON_GetObjectItem(q, "query");
+            const cJSON* ai = cJSON_GetObjectItem(q, "ai_search_response");
+            const cJSON* data_arr = cJSON_IsObject(ai) ? cJSON_GetObjectItem(ai, "data") : nullptr;
+            const cJSON* first = cJSON_IsArray(data_arr) ? cJSON_GetArrayItem(data_arr, 0) : nullptr;
+            const cJSON* md = first != nullptr ? cJSON_GetObjectItem(first, "markdown") : nullptr;
+            if (!cJSON_IsString(query)) continue;
+            BriefQA item;
+            item.question = query->valuestring;
+            if (cJSON_IsString(md)) item.answer_md = md->valuestring;
+            qa.push_back(std::move(item));
+        }
+    }
+    cJSON_Delete(root);
+    if (summary.empty() && qa.empty()) {
+        err = "大纲为空";
+        return false;
+    }
+    return true;
+}
+
 }  // namespace ink
 }  // namespace weread
