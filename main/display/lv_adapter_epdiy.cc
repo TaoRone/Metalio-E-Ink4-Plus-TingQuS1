@@ -606,41 +606,59 @@ static void PollOneSideKey(int index, uint32_t long_ms, void (*on_click)(), void
 }
 
 // 正文沉浸：音量+=上一页、音量-=下一页（含长按连翻）；目录/设置浮层及其余页仍调音量
+// 接管扩展：ScreenVolumeKeysPagingActive() 的页面（书架等列表页）同样获得翻页映射
+#include <atomic>
+static std::atomic<int> s_vol_paging_refs{0};
+void ScreenVolumeKeysPaging(bool enable) {
+    int v = s_vol_paging_refs.load(std::memory_order_relaxed);
+    for (;;) {
+        if (enable) {
+            if (s_vol_paging_refs.compare_exchange_weak(v, v + 1, std::memory_order_relaxed)) return;
+        } else {
+            if (v <= 0) return;
+            if (s_vol_paging_refs.compare_exchange_weak(v, v - 1, std::memory_order_relaxed)) return;
+        }
+    }
+}
+bool ScreenVolumeKeysPagingActive() {
+    return s_vol_paging_refs.load(std::memory_order_acquire) > 0;
+}
+
 static void OnVolUpClick() {
-    if (BookScreen::IsReadingActive()) {
+    if (BookScreen::IsReadingActive() || ScreenVolumeKeysPagingActive()) {
         VkKey_Dispatch("vk_prev");
         return;
     }
     ApplyVolumeDelta(10);
 }
 static void OnVolUpLong() {
-    if (BookScreen::IsReadingActive()) {
+    if (BookScreen::IsReadingActive() || ScreenVolumeKeysPagingActive()) {
         VkKey_OnLongPress("vk_prev");
         return;
     }
     ApplyVolumeAbsolute(100, Lang::Strings::MAX_VOLUME);
 }
 static void OnVolUpUp() {
-    if (BookScreen::IsReadingActive()) {
+    if (BookScreen::IsReadingActive() || ScreenVolumeKeysPagingActive()) {
         VkKey_OnPressUp("vk_prev");
     }
 }
 static void OnVolDownClick() {
-    if (BookScreen::IsReadingActive()) {
+    if (BookScreen::IsReadingActive() || ScreenVolumeKeysPagingActive()) {
         VkKey_Dispatch("vk_next");
         return;
     }
     ApplyVolumeDelta(-10);
 }
 static void OnVolDownLong() {
-    if (BookScreen::IsReadingActive()) {
+    if (BookScreen::IsReadingActive() || ScreenVolumeKeysPagingActive()) {
         VkKey_OnLongPress("vk_next");
         return;
     }
     ApplyVolumeAbsolute(0, Lang::Strings::MUTED);
 }
 static void OnVolDownUp() {
-    if (BookScreen::IsReadingActive()) {
+    if (BookScreen::IsReadingActive() || ScreenVolumeKeysPagingActive()) {
         VkKey_OnPressUp("vk_next");
     }
 }

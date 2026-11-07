@@ -133,7 +133,11 @@ void RenderPage() {
     if (s_page >= total) s_page = total > 0 ? total - 1 : 0;
 
     char page_text[32];
-    std::snprintf(page_text, sizeof(page_text), "%d / %d", s_page + 1, total);
+    if (total == 0) {
+        std::snprintf(page_text, sizeof(page_text), "0 / 0");
+    } else {
+        std::snprintf(page_text, sizeof(page_text), "%d / %d", s_page + 1, total);
+    }
     lv_label_set_text(s_ui.page_lbl, page_text);
 
     const int start = s_page * kRowsPerPage;
@@ -294,6 +298,18 @@ void OnKbKey(lv_event_t* e) {
     } else if (std::strcmp(ch, "CANCEL") == 0) {
         KbClose(false);
         return;
+    } else if (std::strcmp(ch, "USEKEY") == 0) {
+        // 一键采用剪贴板里的微信读书 Key：扫描粘贴位 1..3，首个合法值直接生效
+        for (int n = 1; n <= 3; ++n) {
+            const std::string slot = LansyncScreen::GetSlot(n);
+            if (weread::SetApiKey(slot)) {
+                s_kb_input = slot;
+                KbClose(true);
+                return;
+            }
+        }
+        ESP_LOGW(kTag, "no valid weread key in clipboard slots");
+        return;
     } else if (std::strncmp(ch, "PASTE", 5) == 0) {
         const int n = ch[5] >= '1' && ch[5] <= '3' ? ch[5] - '0' : 0;
         if (n > 0) {
@@ -384,10 +400,10 @@ void OpenKeyInput() {
         fx += fkey_w + fgap;
     }
 
-    // 剪贴板行：PASTE1 / PASTE2 / PASTE3（来自局域网剪贴板）
-    const char* pkeys[] = {"PASTE1", "PASTE2", "PASTE3"};
-    const int pkey_w = 160;
-    const int prow_w = 3 * pkey_w + 2 * fgap;
+    // 剪贴板行：USEKEY（一键采用剪贴板 Key）/ PASTE1 / PASTE2 / PASTE3
+    const char* pkeys[] = {"USEKEY", "PASTE1", "PASTE2", "PASTE3"};
+    const int pkey_w = 150;
+    const int prow_w = 4 * pkey_w + 3 * 12;
     int px = (LV_HOR_RES - prow_w) / 2;
     y += key_h + 16;
     for (const char* pk : pkeys) {
@@ -402,7 +418,7 @@ void OpenKeyInput() {
         lv_obj_set_style_text_color(lbl, lv_color_black(), 0);
         lv_obj_center(lbl);
         lv_obj_add_event_cb(btn, OnKbKey, LV_EVENT_CLICKED, const_cast<char*>(pk));
-        px += pkey_w + fgap;
+        px += pkey_w + 12;
     }
 
     lv_screen_load(scr);
@@ -440,6 +456,8 @@ void OnScreenLoaded(lv_event_t* e) {
     s_alive = true;  // 从键盘页返回时重新激活
     // 前台联网页面：软保网，避免 30s 网络宽限到期后 WiFi 被电源策略降掉
     PowerPolicy::GetInstance().Acquire(PowerNeed::ForegroundNetwork);
+    // 音量键映射为翻页（返回/离开本页时归还）
+    ScreenVolumeKeysPaging(true);
     if (s_books.empty()) StartSync();
 }
 
@@ -448,6 +466,7 @@ void OnScreenUnloaded(lv_event_t* e) {
     // 不清数据：可能是键盘页临时顶上来；真正离开应用由 Create() 全量重置
     s_alive = false;
     PowerPolicy::GetInstance().Release(PowerNeed::ForegroundNetwork);
+    ScreenVolumeKeysPaging(false);
 }
 
 }  // namespace

@@ -36,6 +36,16 @@ void ScreenNavigateTo(lv_obj_t* (*create)(), lv_obj_t* (*return_to)() = nullptr)
 void ScreenNavigateBack();
 /** @brief 标记当前是否为首页 */
 void ScreenSetIsHome(bool is_home);
+
+/**
+ * @brief 音量键临时映射为 vk_prev/vk_next（含长按连翻，同阅读器行为）。
+ *        供书架/列表类页面在非沉浸阅读时获得实体键翻页能力。
+ * @param enable true=接管；false=归还（音量键恢复音量调节）
+ * @note 引用计数实现，Create/Unloaded 成对调用；与阅读器沉浸态互不影响
+ */
+void ScreenVolumeKeysPaging(bool enable);
+/** @brief 当前是否有页面接管音量键翻页 */
+bool ScreenVolumeKeysPagingActive();
 /** @brief 当前是否为首页 */
 bool ScreenIsHome();
 /** @brief 请求回到首页；落墨结束后建屏 */
