@@ -1,6 +1,7 @@
 #include "lansync_screen/lansync_screen.h"
 
 #include <assets/lang_config.h>
+#include <power_policy.h>
 #include <settings.h>
 #include <weread/weread_service.h>
 
@@ -246,6 +247,8 @@ void OnTimerRefresh(lv_timer_t*) { RefreshSlotLabels(); }
 void OnScreenLoaded(lv_event_t* e) {
     if (lv_event_get_target(e) != s_screen) return;
     s_alive = true;
+    // 本页与 PC 长时间交互：软保网，防止宽限到期断网导致网页连不上
+    PowerPolicy::GetInstance().Acquire(PowerNeed::ForegroundNetwork);
 
     // WiFi STA IP
     esp_netif_t* sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
@@ -286,6 +289,7 @@ void OnScreenLoaded(lv_event_t* e) {
 void OnScreenUnloaded(lv_event_t* e) {
     if (lv_event_get_target(e) != s_screen) return;
     s_alive = false;
+    PowerPolicy::GetInstance().Release(PowerNeed::ForegroundNetwork);
     if (s_refresh_timer != nullptr) {
         lv_timer_delete(s_refresh_timer);
         s_refresh_timer = nullptr;

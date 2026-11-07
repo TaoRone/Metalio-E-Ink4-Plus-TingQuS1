@@ -3,6 +3,7 @@
 #include <application.h>
 #include <board.h>
 #include <assets/lang_config.h>
+#include <power_policy.h>
 #include <weread/weread_service.h>
 
 #include "screen_common.h"
@@ -208,6 +209,8 @@ void StartSync() {
     Application::GetInstance().Schedule([now]() {
         auto* msg = new SyncResultMsg{};
         msg->has_key = weread::HasApiKey();
+        // 云同步：硬占网，持有期间不计无操作进待机，防同步中途断网
+        PowerPolicy::GetInstance().Acquire(PowerNeed::OtaDownload);
         do {
             const int64_t net_begin = esp_timer_get_time();
             if (!Board::GetInstance().EnsureNetworkReady(30000)) {
@@ -232,6 +235,7 @@ void StartSync() {
                 }
             }
         } while (false);
+        PowerPolicy::GetInstance().Release(PowerNeed::OtaDownload);
         if (now != s_last_sync_us.load()) { /* noop：仅消告警 */ }
         if (!ScreenLvAsync(AsyncApplySync, msg)) {
             delete msg;
@@ -434,6 +438,8 @@ bool OnVkKey(const char* key) {
 void OnScreenLoaded(lv_event_t* e) {
     if (lv_event_get_target(e) != s_ui.screen) return;
     s_alive = true;  // 从键盘页返回时重新激活
+    // 前台联网页面：软保网，避免 30s 网络宽限到期后 WiFi 被电源策略降掉
+    PowerPolicy::GetInstance().Acquire(PowerNeed::ForegroundNetwork);
     if (s_books.empty()) StartSync();
 }
 
@@ -441,6 +447,7 @@ void OnScreenUnloaded(lv_event_t* e) {
     if (lv_event_get_target(e) != s_ui.screen) return;
     // 不清数据：可能是键盘页临时顶上来；真正离开应用由 Create() 全量重置
     s_alive = false;
+    PowerPolicy::GetInstance().Release(PowerNeed::ForegroundNetwork);
 }
 
 }  // namespace
