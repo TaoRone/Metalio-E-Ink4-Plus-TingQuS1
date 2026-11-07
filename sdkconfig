@@ -4516,6 +4516,13 @@ CONFIG_LIBPNG_PREFER_PSRAM=y
 # end of libpng
 
 #
+# zlib Configurations
+#
+# default:
+CONFIG_ZLIB_PREFER_PSRAM=y
+# end of zlib Configurations
+
+#
 # LVGL configuration
 #
 CONFIG_LV_CONF_SKIP=y

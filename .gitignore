@@ -18,6 +18,12 @@ build/
 .vscode/
 .cursor/
 .devcontainer/
+
+# TingQuS1: build artifacts & device backups (never commit firmware binaries / serial logs with device IDs)
+firmware/
+daily-builds/
+metalio-e-ink4.bin
+backups/
 dependencies.lock
 .env
 releases/

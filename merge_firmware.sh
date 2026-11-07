@@ -21,6 +21,8 @@ DAILY_BUILD_DIR="daily-builds"
 PRODUCT_NAME="metalio-e-ink4"
 FONT_PACK="use_font/font.fontpack"
 FONT_PART_NAME="font_data"
+# 构建目录可用环境变量覆盖（如源码路径含非 ASCII 字符时，构建需放到纯 ASCII 路径）
+BUILD_DIR="${BUILD_DIR:-build}"
 
 usage() {
   cat <<'EOF'
@@ -112,7 +114,7 @@ get_project_ver() {
 # ---------- 从已构建分区表解析 font_data Offset/Size ----------
 # 输出到全局：FONT_ADDR FONT_SIZE（十进制字节；ADDR 打印用十六进制）
 resolve_font_partition() {
-  local part_bin="build/partition_table/partition-table.bin"
+  local part_bin="${BUILD_DIR}/partition_table/partition-table.bin"
   if [[ ! -f "$part_bin" ]]; then
     echo "错误: 缺少 ${part_bin}，请先完成编译" >&2
     exit 1
@@ -154,7 +156,7 @@ resolve_flash_path() {
   if [[ "$file" == /* ]]; then
     echo "$file"
   else
-    echo "build/${file}"
+    echo "${BUILD_DIR}/${file}"
   fi
 }
 
@@ -166,7 +168,7 @@ norm_hex_addr() {
 collect_merge_args() {
   MERGE_ARGS=()
 
-  local flash_args="build/flash_args"
+  local flash_args="${BUILD_DIR}/flash_args"
   if [[ ! -f "$flash_args" ]]; then
     echo "错误: 缺少 ${flash_args}，请先完成编译" >&2
     exit 1
@@ -235,21 +237,23 @@ main() {
   local out="${FIRMWARE_DIR}/${PRODUCT_NAME}-${ver}.bin"
   echo "[ver] PROJECT_VER=${ver} -> ${out}"
 
-  echo "[build] idf.py build ..."
-  idf.py build
+  echo "[build] idf.py -B ${BUILD_DIR} build ..."
+  idf.py -B "${BUILD_DIR}" build
 
   collect_merge_args
 
   # 优先与 build/flasher_args.json / flash_args 一致；可用环境变量覆盖
   local chip="${ESPTOOL_CHIP:-esp32s3}"
+  # 注意：默认 esp32s3 仅为兼容旧项目；本仓库目标芯片以 sdkconfig 为准，
+  # 非 esp32s3 目标务必显式传入 ESPTOOL_CHIP（如 ESPTOOL_CHIP=esp32s31）。
   local flash_mode="${FLASH_MODE:-dio}"
   local flash_freq="${FLASH_FREQ:-80m}"
   local flash_size="${FLASH_SIZE:-16MB}"
 
   # 若 flash_args 首行带 --flash_*，覆盖默认
-  if [[ -f build/flash_args ]]; then
+  if [[ -f "${BUILD_DIR}/flash_args" ]]; then
     local line
-    line="$(head -1 build/flash_args || true)"
+    line="$(head -1 "${BUILD_DIR}/flash_args" || true)"
     if [[ "$line" == --flash_* ]]; then
       # shellcheck disable=SC2086
       set -- $line
