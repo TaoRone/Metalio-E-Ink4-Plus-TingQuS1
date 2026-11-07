@@ -18,6 +18,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <memory>
 #include <string>
 #include <vector>
@@ -56,11 +57,21 @@ std::vector<weread::ShelfBook> s_books;
 std::atomic<bool> s_busy{false};
 std::atomic<int64_t> s_last_sync_us{0};
 
+// 前向声明（定义在文件后部）
+void OnRowClicked(lv_event_t* e);
+void OpenDetail(int idx);
+void BackToShelf();
+
 // 键盘状态
 lv_obj_t* s_kb_screen = nullptr;
 lv_obj_t* s_kb_input_lbl = nullptr;  // 键盘页输入显示行（键盘页为单例，直接静态持有）
 std::string s_kb_input;
 bool s_kb_shift = false;
+
+// 图书详情页状态
+lv_obj_t* s_detail = nullptr;
+lv_obj_t* s_d_info = nullptr;
+int s_detail_idx = -1;
 
 struct KbKeyRef {
     lv_obj_t* label;
@@ -150,6 +161,9 @@ void RenderPage() {
         lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(row, lv_color_black(), 0);
         lv_obj_set_style_border_width(row, 1, 0);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(row, OnRowClicked, LV_EVENT_CLICKED,
+                            reinterpret_cast<void*>(static_cast<intptr_t>(start + i)));
         DisableScroll(row);
         FillRow(row, s_books[start + i]);
     }
@@ -179,13 +193,18 @@ void SetStatus(const char* text) {
 
 struct SyncResultMsg {
     std::vector<weread::ShelfBook> books;
+    std::string raw_body;   // 同步成功后写入 SD 缓存
     std::string err;
     bool has_key = false;
 };
 
 void AsyncApplySync(void* user_data) {
     std::unique_ptr<SyncResultMsg> msg(static_cast<SyncResultMsg*>(user_data));
-    if (!s_alive) return;
+    if (!s_alive) {
+        ESP_LOGW(kTag, "sync result dropped: screen not active");
+        s_busy.store(false);
+        return;
+    }
     s_busy.store(false);
     if (!msg->err.empty()) {
         SetStatus(msg->err.c_str());
@@ -195,6 +214,9 @@ void AsyncApplySync(void* user_data) {
     s_page = 0;
     SetStatus("");
     RenderPage();
+    if (!msg->raw_body.empty()) {
+        weread::SaveShelfCacheBody(msg->raw_body);  // 失败静默：缓存是优化不是必须
+    }
 }
 
 void StartSync() {
@@ -226,11 +248,11 @@ void StartSync() {
             ESP_LOGI(kTag, "network ready in %lld ms",
                      (long long)((esp_timer_get_time() - net_begin) / 1000));
             std::string err;
-            if (!weread::FetchShelf(msg->books, err)) {
+            if (!weread::FetchShelf(msg->books, msg->raw_body, err)) {
                 // 连接类错误重试一次
                 vTaskDelay(pdMS_TO_TICKS(500));
                 Board::GetInstance().EnsureNetworkReady(15000);
-                if (!weread::FetchShelf(msg->books, err)) {
+                if (!weread::FetchShelf(msg->books, msg->raw_body, err)) {
                     msg->err = Lang::Strings::WEREAD_SYNC_FAIL;
                     if (!err.empty()) {
                         msg->err += ": ";
@@ -432,6 +454,136 @@ void OnRefreshClicked(lv_event_t* /*e*/) { StartSync(); }
 
 void OnKeyBtnClicked(lv_event_t* /*e*/) { OpenKeyInput(); }
 
+// ---------------------------------------------------------------------------
+// 图书详情页：基础信息 + 后台拉取阅读进度 / 划线数
+// ---------------------------------------------------------------------------
+
+struct DetailResultMsg {
+    int idx = -1;
+    int progress = -1;   // -1 = 未知
+    int bookmarks = -1;
+    std::string err;
+};
+
+std::string FormatReadTime(int64_t epoch_sec) {
+    if (epoch_sec <= 0) return "-";
+    time_t t = static_cast<time_t>(epoch_sec);
+    struct tm tmv;
+    localtime_r(&t, &tmv);
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%04d-%02d-%02d %02d:%02d",
+                  tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min);
+    return buf;
+}
+
+void DetailApplyInfo(void* user_data) {
+    std::unique_ptr<DetailResultMsg> msg(static_cast<DetailResultMsg*>(user_data));
+    if (s_detail == nullptr || msg->idx != s_detail_idx || s_d_info == nullptr) return;
+    if (!msg->err.empty()) {
+        lv_label_set_text(s_d_info, "进度获取失败（网络或接口限制）");
+        return;
+    }
+    char buf[192];
+    std::snprintf(buf, sizeof(buf), "阅读进度: %s\n划线/笔记: %s",
+                  msg->progress >= 0 ? (std::to_string(msg->progress) + "%").c_str() : "未知",
+                  msg->bookmarks >= 0 ? (std::to_string(msg->bookmarks) + " 条").c_str() : "未知");
+    lv_label_set_text(s_d_info, buf);
+}
+
+void BackToShelf() {
+    if (s_detail != nullptr) {
+        lv_obj_t* d = s_detail;
+        s_detail = nullptr;
+        s_detail_idx = -1;
+        if (s_ui.screen != nullptr) lv_screen_load(s_ui.screen);
+        lv_obj_delete_async(d);
+    }
+}
+
+bool DetailOnVkKey(const char* key) {
+    if (std::strcmp(key, "vk_prev") == 0) {
+        ScreenLvAsync([](void*) { BackToShelf(); });
+        return true;
+    }
+    return false;
+}
+
+void OpenDetail(int idx) {
+    if (s_detail != nullptr || idx < 0 || idx >= static_cast<int>(s_books.size())) return;
+    const weread::ShelfBook& b = s_books[idx];
+
+    lv_obj_t* scr = lv_obj_create(nullptr);
+    lv_obj_set_style_bg_color(scr, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(scr, lv_color_black(), 0);
+
+    lv_obj_t* title = lv_label_create(scr);
+    lv_label_set_text(title, b.title.c_str());
+    lv_label_set_long_mode(title, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(title, LV_HOR_RES - kPad * 4);
+    lv_obj_set_style_text_font(title, UiTitleFont(), 0);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, kPad * 2, 56);
+
+    std::string base;
+    base += b.author.empty() ? "-" : b.author;
+    base += " · ";
+    base += b.category.empty() ? "未分类" : b.category;
+    base += "\n状态: ";
+    base += b.finish_reading ? "已读完" : "在读/未读";
+    base += "\n最近阅读: ";
+    base += FormatReadTime(b.read_update_time);
+
+    lv_obj_t* meta = lv_label_create(scr);
+    lv_label_set_text(meta, base.c_str());
+    lv_obj_set_style_text_font(meta, UiFont(), 0);
+    lv_obj_align(meta, LV_ALIGN_TOP_LEFT, kPad * 2, 200);
+
+    lv_obj_t* info = lv_label_create(scr);
+    lv_label_set_text(info, "阅读进度: 加载中…");
+    lv_obj_set_style_text_font(info, UiFont(), 0);
+    lv_obj_align(info, LV_ALIGN_TOP_LEFT, kPad * 2, 420);
+    s_d_info = info;
+
+    lv_obj_t* hint = lv_label_create(scr);
+    lv_label_set_text(hint, "提示: 在线阅读(M2)即将提供；可用传书导入本地 epub/txt 阅读");
+    lv_obj_set_style_text_font(hint, UiFont(), 0);
+    lv_obj_set_style_text_opa(hint, LV_OPA_60, 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, kPad * 2, -kPad * 2);
+
+    VkKey_AttachScreen(scr, "weread_detail",
+                       VkKeyScreenDesc{+[]() -> lv_obj_t* { return s_ui.screen; },
+                                       DetailOnVkKey, nullptr, nullptr, nullptr,
+                                       nullptr, nullptr, nullptr});
+
+    s_detail = scr;
+    s_detail_idx = idx;
+    lv_screen_load(scr);
+
+    // 后台拉取进度与划线数（OtaDownload 硬占网）
+    Application::GetInstance().Schedule([idx, book_id = b.book_id]() {
+        auto* msg = new DetailResultMsg{};
+        msg->idx = idx;
+        PowerPolicy::GetInstance().Acquire(PowerNeed::OtaDownload);
+        do {
+            if (!Board::GetInstance().EnsureNetworkReady(30000)) {
+                msg->err = "net";
+                break;
+            }
+            std::string err;
+            msg->progress = weread::FetchProgressPercent(book_id, err);
+            err.clear();
+            weread::FetchBookmarkCount(book_id, msg->bookmarks, err);
+        } while (false);
+        PowerPolicy::GetInstance().Release(PowerNeed::OtaDownload);
+        if (!ScreenLvAsync(DetailApplyInfo, msg)) delete msg;
+    }, Application::TaskDomain::Network);
+}
+
+void OnRowClicked(lv_event_t* e) {
+    const intptr_t idx = reinterpret_cast<intptr_t>(lv_event_get_user_data(e));
+    OpenDetail(static_cast<int>(idx));
+}
+
 bool OnVkKey(const char* key) {
     if (s_kb_screen != nullptr) return false;  // 键盘页自行处理点击
     if (std::strcmp(key, "vk_prev") == 0) {
@@ -453,30 +605,53 @@ bool OnVkKey(const char* key) {
 
 void OnScreenLoaded(lv_event_t* e) {
     if (lv_event_get_target(e) != s_ui.screen) return;
-    s_alive = true;  // 从键盘页返回时重新激活
+    s_alive = true;  // 从键盘页/详情页返回时重新激活
     // 前台联网页面：软保网，避免 30s 网络宽限到期后 WiFi 被电源策略降掉
     PowerPolicy::GetInstance().Acquire(PowerNeed::ForegroundNetwork);
     // 音量键映射为翻页（返回/离开本页时归还）
     ScreenVolumeKeysPaging(true);
-    if (s_books.empty()) StartSync();
+
+    // 先进缓存（离线也能看书架），再后台刷新
+    if (s_books.empty()) {
+        std::string cached;
+        if (weread::LoadShelfCacheBody(cached)) {
+            std::vector<weread::ShelfBook> books;
+            std::string perr;
+            if (weread::ParseShelfBody(cached, books, perr)) {
+                s_books = std::move(books);
+                RenderPage();
+                SetStatus("缓存");
+            }
+        }
+    }
+    // 自动刷新：仅当缓存缺失或距上次同步超过 60s（从详情返回不触发同步风暴）
+    const bool stale = (esp_timer_get_time() - s_last_sync_us.load()) > 60LL * 1000000LL;
+    if (weread::HasApiKey() && (s_books.empty() || stale)) StartSync();
 }
 
 void OnScreenUnloaded(lv_event_t* e) {
     if (lv_event_get_target(e) != s_ui.screen) return;
-    // 不清数据：可能是键盘页临时顶上来；真正离开应用由 Create() 全量重置
+    // 不清数据：键盘页/详情页临时顶上来时保留；真正离开应用由 Create() 全量重置
     s_alive = false;
-    PowerPolicy::GetInstance().Release(PowerNeed::ForegroundNetwork);
-    ScreenVolumeKeysPaging(false);
+    if (s_detail == nullptr) {
+        PowerPolicy::GetInstance().Release(PowerNeed::ForegroundNetwork);
+        ScreenVolumeKeysPaging(false);
+    }
 }
 
 }  // namespace
 
 lv_obj_t* WereadScreen::Create() {
     s_ui = Ui{};
-    s_alive = true;
+    s_alive = true;   // Create 即视为激活（Loaded 之前可能先收到异步结果）
     s_page = 0;
     s_books.clear();
     s_busy.store(false);
+    s_detail_idx = -1;
+    // 注意：不从这边删除旧详情页——屏幕生命周期归系统导航栈管理，
+    // 它返回首页时可能已经删除；二次释放会造成 LVGL 堆损坏（表现为再进应用卡死）。
+    // 极端情况下泄漏一个页面对象，可接受。
+    s_detail = nullptr;
 
     ScreenSetIsHome(false);
 

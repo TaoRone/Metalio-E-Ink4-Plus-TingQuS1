@@ -46,8 +46,21 @@ bool GatewayCall(const std::string& api_name, const std::string& params_json,
 // 全量书架（官方接口当前一次返回全部；含读完标记与最近阅读时间）
 bool FetchShelf(std::vector<ShelfBook>& out, std::string& err);
 
+// 同上，同时返回原始响应体（用于 SD 缓存）
+bool FetchShelf(std::vector<ShelfBook>& out, std::string& raw_body, std::string& err);
+
+// 解析 /shelf/sync 响应体（缓存恢复用）
+bool ParseShelfBody(const std::string& body, std::vector<ShelfBook>& out, std::string& err);
+
 // 单本书阅读进度（/book/getprogress），返回阅读进度百分比 0-100；失败返回 -1
 int FetchProgressPercent(const std::string& book_id, std::string& err);
+
+// 单本书划线/书签数量（/book/bookmarklist）
+bool FetchBookmarkCount(const std::string& book_id, int& count, std::string& err);
+
+// 书架 SD 缓存：同步成功后保存原始 JSON，进页先展示缓存再后台刷新
+bool SaveShelfCacheBody(const std::string& body);
+bool LoadShelfCacheBody(std::string& body);
 
 // 阅读统计（/readdata/detail）
 bool FetchReadStats(ReadStats& out, std::string& err);

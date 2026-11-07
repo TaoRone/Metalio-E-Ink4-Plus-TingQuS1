@@ -9,6 +9,7 @@
 #include <cJSON.h>
 
 #include <cstdio>
+#include <cerrno>
 #include <sys/stat.h>
 
 namespace {
@@ -285,11 +286,17 @@ bool FetchBookmarkCount(const std::string& book_id, int& count, std::string& err
 
 bool SaveShelfCacheBody(const std::string& body) {
     const char* path = "/sdcard/metalio/e-ink/weread/shelf_cache.json";
-    mkdir("/sdcard/metalio/e-ink/weread", 0755);
+    if (mkdir("/sdcard/metalio/e-ink/weread", 0755) != 0 && errno != EEXIST) {
+        ESP_LOGW("WereadSvc", "cache mkdir failed errno=%d", errno);
+    }
     FILE* f = fopen(path, "wb");
-    if (f == nullptr) return false;
+    if (f == nullptr) {
+        ESP_LOGW("WereadSvc", "cache save open failed");
+        return false;
+    }
     fwrite(body.data(), 1, body.size(), f);
     fclose(f);
+    ESP_LOGI("WereadSvc", "cache saved %u bytes", static_cast<unsigned>(body.size()));
     return true;
 }
 
@@ -303,6 +310,7 @@ bool LoadShelfCacheBody(std::string& body) {
         body.append(buf, n);
     }
     fclose(f);
+    ESP_LOGI("WereadSvc", "cache loaded %u bytes", static_cast<unsigned>(body.size()));
     return !body.empty();
 }
 
