@@ -42,9 +42,16 @@
     令牌存 NVS weread/ink_*，401 自动刷新重试；登录成功后续操作免扫码
   - 章节目录 POST /book/chapterInfos 通（body 必须含 synckeys/updateTimes/maxfreeIdx 数组，
     缺字段直接 499）；章节目录含 files[]（章节 xhtml 路径列表）
-  - **正文端点未攻克**：8 路候选全 404（无认证也 404，路径与认证类型强绑定）；
-    weread-exporter 等开源实现走浏览器渲染抓取，无干净 API；weread-omni 不含正文。
-    下一步候选：网页 Cookie（wr_vid/wr_skey）+ /book/chapterContent 验证；或抓包真实墨水屏 App
+  - **正文端点未攻克（2026-11-08 深夜攻坚实录）**：
+    - 墨水屏令牌 ✅（NVS dump 提取 ink_* 后 PC 直连验证，chapterInfos 正常）
+    - 死亡名单（全 404，含完整网页 Cookie/Referer/UA 变体）：i.weread.qq.com
+      /book/chapterContent(GET/POST)、/book/content、/book/chapterHtml、/book/textContent、
+      /book/getContent、/book/chapterFile、/book/download、/book/getChapterContent、
+      /web/book/chapterContent×2 形态；weread.qq.com/web/book/read=进度上报（非正文）
+    - 网页版正文走 dataString 编码 + 加密 payload（JS 字符串数组旋转混淆），
+      SSR 阅读页只嵌简介+首章节选（~9KB），带章节参数无效；briefOutline 是 AI 精读
+      （668KB，非原文）——干净正文 API 需专项逆向或多日抓包，列需求池
+    - **安全提示**：用户的 wr_skey 曾贴于剪贴板/聊天记录，介意可在网页端重新登录轮换
   - `.ebook` 合成器就绪（SPEC v1，未压缩分块省 app 体积），正文一通即可全链路
   - 调试利器：`py -m esptool read-flash 0x9000 0x4000` dump NVS 可提取 ink_* 令牌，
     PC 直连 i.weread.qq.com 探测接口（2026-11-08 实战验证）
@@ -66,9 +73,12 @@
 ## 待办（按优先级）
 
 1. **需求池**：
-   - EPUB 字级进度同步：解析 kosync `progress` 字段的 KOReader xpointer（/body/DocFragment[n]/…），
-     Reeden 已实现同类方案（changelog 2026-10-22 "EPUB 精确到字"）；工作量较大单列
-   - 语音读书/音频播放（蓝牙链路现成，待 TTS 选型）
+   - **M2 正文端点专项**：网页版正文 JS 加密（字符串数组旋转 + dataString 编码），
+     需逆向 weread web chunk（cdn.weread.qq.com/web/wrwebnjlogic/js/）或抓包真机墨水屏 App；
+     死亡名单与已验证结论见「M2 在线阅读」节
+   - **AI 大纲功能（可独立交付）**：GET weread.qq.com/web/book/briefOutline?bookId= 已验证
+     可用（668KB AI 精读：summary + 主题问答），Cookie 鉴权，可作为在线阅读的补充阅读形态
+   - EPUB 字级进度同步：解析 kosync `progress` 字段的 KOReader xpointer（Reeden 已实现同类）
 2. **M2 在线阅读**：微信读书墨水屏非官方接口（weread-omni 参考），实验功能默认关
 3. Reeden 侧：用户已关文件加密；需"清空云端"重传去旧密文
 
