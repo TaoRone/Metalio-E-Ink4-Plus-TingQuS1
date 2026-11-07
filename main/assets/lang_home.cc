@@ -369,6 +369,7 @@
     X(SETTINGS_NET_SIM_EXT, "外置卡", "External SIM") \
     X(SETTINGS_NET_SIM_INT, "内置卡", "Internal SIM") \
     X(HOME_APP_WEREAD, "微信读书", "WeRead") \
+    X(HOME_APP_KOSYNC, "KOReader 同步", "KOReader Sync") \
     X(WEREAD_TITLE, "微信读书书架", "WeRead Shelf") \
     X(WEREAD_REFRESH, "刷新", "Refresh") \
     X(WEREAD_LOADING, "正在同步书架…", "Syncing shelf…") \

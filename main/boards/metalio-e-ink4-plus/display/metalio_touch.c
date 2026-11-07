@@ -33,7 +33,9 @@
 #define I2C1_LOCK_MS   50
 #define TOUCH_FEED_MS  10
 #define TOUCH_FEED_PRIO 5
-#define TOUCH_FEED_STACK 4096
+// 8KB：触摸事件链会深到 LVGL 控件事件/键盘重建/NVS；4KB 在关 Flash 缓存的
+// SDK 栈 sanity 校验下余量不足会断言重启（2026-11 kosync PASTE 踩雷实录）
+#define TOUCH_FEED_STACK 8192
 
 static bool s_ok = false;
 static SemaphoreHandle_t s_irq_sem = NULL;

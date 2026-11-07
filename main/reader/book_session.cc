@@ -1,5 +1,7 @@
 #include "book_session.h"
 
+#include "kosync.h"
+
 #include <algorithm>
 #include <cerrno>
 #include <climits>
@@ -949,6 +951,10 @@ bool BookSession::SaveProgress() {
     const bool ok = WriteFileAtomic(path.c_str(), reinterpret_cast<const uint8_t*>(&blob), sizeof(blob));
 #endif
     if (!ok) LogProgressFailure("enqueue", path.c_str());
+    // KOReader 同步：写盘成功后通知（服务层节流，关书自然带上最后一次）
+    if (ok) {
+        kosync::NotifyProgressSaved(info_.path, static_cast<int>(blob.pct_x10));
+    }
     return ok;
 }
 
@@ -1506,6 +1512,9 @@ bool BookSession::OpenImpl(const BookInfo& info) {
         }
     }
     ReportOpenProgress(100);
+    // KOReader 同步：本地进度恢复完成后后台拉云端（不阻塞开书；服务层仅在
+    // 远端明显领先时回调跳转 handler）
+    kosync::NotifyBookOpened(info_.path);
     return true;
 }
 

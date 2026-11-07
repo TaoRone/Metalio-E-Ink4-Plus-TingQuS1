@@ -24,6 +24,7 @@
 #include "book_screen/reader/book_reader_overlay.h"
 
 #include "reader/txt_chapter.h"
+#include "reader/kosync.h"
 #include "book_screen/settings/book_sheet_icons.h"
 #include "book_screen/settings/book_bookmark_art.h"
 #include "fontpack_lvgl.h"
@@ -497,6 +498,34 @@ static void SheetChapterAsync(void* data) {
 static void SheetChapter(lv_event_t* e) {
     lv_event_stop_bubbling(e);
     BookLvAsync(SheetChapterAsync,lv_event_get_user_data(e));
+}
+
+// KOReader 同步：手动上传当前进度（跳过节流立即推）
+static void SheetKosyncPushAsync(void* /*data*/) {
+    auto& st = Book_State();
+    if (!st.reader.session || !st.reader.session->IsOpen()) return;
+    st.reader.session->SaveProgress();
+    reader::kosync::PushNow(st.reader.session->Info().path,
+                            st.reader.session->ReadingProgressX10());
+    ScreenShowToast("已上传阅读进度");
+}
+
+// KOReader 同步：手动拉取云端进度（有差异即自动跳转，跳转时另有提示）
+static void SheetKosyncPullAsync(void* /*data*/) {
+    auto& st = Book_State();
+    if (!st.reader.session || !st.reader.session->IsOpen()) return;
+    reader::kosync::PullNow(st.reader.session->Info().path);
+    ScreenShowToast("已请求拉取云端进度");
+}
+
+static void SheetKosyncPush(lv_event_t* e) {
+    lv_event_stop_bubbling(e);
+    BookLvAsync(SheetKosyncPushAsync, nullptr);
+}
+
+static void SheetKosyncPull(lv_event_t* e) {
+    lv_event_stop_bubbling(e);
+    BookLvAsync(SheetKosyncPullAsync, nullptr);
 }
 static void SheetSeek(lv_event_t* e) {
     const int value = lv_slider_get_value(static_cast<lv_obj_t*>(lv_event_get_target(e)));
@@ -1337,6 +1366,18 @@ static void BuildSheetDuration(lv_obj_t* body) {
     SetSheetBtnEnabled(prev, ready && (comic ? session.HasPrevPage() : session.CurrentTocIndex() > 0));
     SetSheetBtnEnabled(next, ready && (comic ? session.HasNextPage() : session.CurrentTocIndex() + 1 < session.TocCount()));
     if (!ready) lv_obj_add_state(slider, LV_STATE_DISABLED);
+
+    // KOReader 同步：手动上传/拉取进度（仅在已启用且配置账号时显示）
+    if (reader::kosync::IsEnabled() && reader::kosync::HasCredentials()) {
+        auto* sync = SheetBox(body, width, UiSy(44));
+        const int half = (width - UiSx(12)) / 2;
+        auto* push = SheetButton(sync, "上传进度", half, UiSy(36), SheetKosyncPush, 0);
+        lv_obj_align(push, LV_ALIGN_LEFT_MID, 0, 0);
+        auto* pull = SheetButton(sync, "拉取进度", half, UiSy(36), SheetKosyncPull, 0);
+        lv_obj_align(pull, LV_ALIGN_RIGHT_MID, 0, 0);
+        lv_obj_set_style_border_width(push, 0, 0);
+        lv_obj_set_style_border_width(pull, 0, 0);
+    }
 }
 } // namespace
 
@@ -1483,7 +1524,7 @@ void ResizeReadingBottomSheet() {
     const bool compact = st.settings.reader_tab == kDurationTab;
     const bool full = st.settings.reader_tab == 0 || st.settings.reader_tab == 2 ||
         (st.settings.reader_tab == 3 && LV_HOR_RES > LV_VER_RES);
-    int desired = compact ? UiSy(190) :
+    int desired = compact ? UiSy(252) :
         full ? LV_VER_RES : st.settings.reader_tab == 3 ? UiSy(558) : UiSy(430);
     if (st.settings.reader_tab == 1) {
         const int header = std::min<int>(UiSy(56), LV_VER_RES / 8);

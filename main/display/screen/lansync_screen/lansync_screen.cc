@@ -13,6 +13,7 @@
 #include <esp_log.h>
 #include <esp_netif.h>
 #include <cJSON.h>
+#include <mutex>
 
 #include <algorithm>
 #include <cstdio>
@@ -43,6 +44,13 @@ lv_obj_t* s_slot_lbls[3] = {nullptr, nullptr, nullptr};
 
 std::string SlotKey(int n) { return "slot" + std::to_string(n); }
 
+// 槽位 RAM 缓存：触摸/键盘事件链（touch_feed 仅 4KB 栈）禁止直触 NVS→Flash——
+// SDK 在关 Flash 缓存前会校验当前任务栈余量，深调用链下会断言重启。
+// 网页端 SaveSlot 时同步更新本缓存，保持一致。
+static std::mutex s_slot_mu;
+static std::string s_slot_cache[3];
+static bool s_slot_valid[3] = {false, false, false};
+
 const lv_font_t* UiFont() { return fontpack_lv_font_ui(); }
 const lv_font_t* UiTitleFont() {
     const lv_font_t* f = fontpack_lv_font_get(30, 2);
@@ -50,11 +58,26 @@ const lv_font_t* UiTitleFont() {
 }
 
 std::string LoadSlot(int n) {
+    if (n < 1 || n > 3) return "";
+    {
+        std::lock_guard<std::mutex> lock(s_slot_mu);
+        if (s_slot_valid[n - 1]) return s_slot_cache[n - 1];
+    }
     Settings s("clipboard");
-    return s.GetString(SlotKey(n));
+    std::string v = s.GetString(SlotKey(n));
+    std::lock_guard<std::mutex> lock(s_slot_mu);
+    s_slot_cache[n - 1] = v;
+    s_slot_valid[n - 1] = true;
+    return v;
 }
 
 void SaveSlot(int n, const std::string& text) {
+    if (n < 1 || n > 3) return;
+    {
+        std::lock_guard<std::mutex> lock(s_slot_mu);
+        s_slot_cache[n - 1] = text;
+        s_slot_valid[n - 1] = true;
+    }
     Settings s("clipboard", true);
     s.SetString(SlotKey(n), text);
 }

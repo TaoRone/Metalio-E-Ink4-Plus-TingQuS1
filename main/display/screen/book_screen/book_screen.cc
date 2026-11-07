@@ -19,6 +19,9 @@
 
 #include <lvgl.h>
 #include <atomic>
+#include <cstdio>
+#include <memory>
+#include <new>
 #include <string>
 
 #include "assets/lang_config.h"
@@ -26,6 +29,7 @@
 #include "reader/reader.h"
 #include "reader/book_library.h"
 #include "reader/book_home_snapshot.h"
+#include "reader/kosync.h"
 #include "screen_common.h"
 #include "vk_key_handler.h"
 
@@ -41,9 +45,64 @@ BookUiState& Book_State() {
     return s;
 }
 
+namespace {
+
+// KOReader 同步：云端进度跳转消息（kosync 服务层在 Network 线程回调，经 ScreenLvAsync 转来）
+struct KosyncJumpMsg {
+    std::string path;
+    int pct_x10 = 0;
+    std::string source_device;
+};
+
+void KosyncJumpApply(void* user_data) {
+    std::unique_ptr<KosyncJumpMsg> msg(static_cast<KosyncJumpMsg*>(user_data));
+    if (msg == nullptr) return;
+    auto& st = Book_State();
+    if (!st.reader.session || !st.reader.session->IsOpen()) return;
+    if (st.reader.session->Info().path != msg->path) return;  // 已换书：丢弃过期跳转
+    char tip[96];
+    std::snprintf(tip, sizeof(tip), "云端进度 %.1f%%（来自 %s）", msg->pct_x10 / 10.0,
+                  msg->source_device.empty() ? "其他设备" : msg->source_device.c_str());
+    ScreenShowToast(tip);
+    if (reader::kosync::AutoJump()) {
+        st.reader.session->GoToReadingProgress(msg->pct_x10);
+    }
+}
+
+void EnsureKosyncHandlerRegistered() {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    reader::kosync::SetJumpHandler([](const std::string& book_path, int pct_x10,
+                                      const std::string& source_device) {
+        auto* msg = new (std::nothrow) KosyncJumpMsg{book_path, pct_x10, source_device};
+        if (msg == nullptr) return;
+        if (!ScreenLvAsync(KosyncJumpApply, msg)) delete msg;
+    });
+    // 手动同步失败回执：Network 线程 → LVGL toast
+    reader::kosync::SetStatusHandler([](const char* message) {
+        struct StatusMsg {
+            std::string text;
+        };
+        auto* msg = new (std::nothrow) StatusMsg{message != nullptr ? message : ""};
+        if (msg == nullptr) return;
+        if (!ScreenLvAsync(
+                [](void* data) {
+                    std::unique_ptr<StatusMsg> m(static_cast<StatusMsg*>(data));
+                    if (m != nullptr && !m->text.empty()) ScreenShowToast(m->text.c_str());
+                },
+                msg)) {
+            delete msg;
+        }
+    });
+}
+
+}  // namespace
+
 static lv_obj_t* CreateBookHome(bool continue_latest) {
     auto& st = Book_State();
     ReleaseReaderSessionForLeave();
+    EnsureKosyncHandlerRegistered();
     st.shelf.shelf_multi = false;
     st.shelf.shelf_selected.clear();
     st.shelf.shelf_suppress_click_until_us = 0;

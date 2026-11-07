@@ -19,6 +19,7 @@
 #include "settings_screen/settings_screen.h"
 #include "task_screen/task_screen.h"
 #include "weread_screen/weread_screen.h"
+#include "kosync_screen/kosync_screen.h"
 #include "lansync_screen/lansync_screen.h"
 #include "vk_key_handler.h"
 #include "vk_page_repeat.h"
@@ -63,6 +64,7 @@ void Home_OnAppNameDraw(lv_event_t* e)
     const char *Home_AppNameCloud() { return Lang::Strings::HOME_APP_CLOUD; }
     const char *Home_AppNameSettings() { return Lang::Strings::HOME_APP_SETTINGS; }
     const char *Home_AppNameWeread() { return Lang::Strings::HOME_APP_WEREAD; }
+    const char *Home_AppNameKosync() { return Lang::Strings::HOME_APP_KOSYNC; }
     const char *Home_AppNameLansync() { return Lang::Strings::HOME_APP_LANSYNC; }
 
     #if !CONFIG_BOARD_TYPE_METALIO_E_INK4_PLUS_GLOBAL
@@ -78,6 +80,7 @@ void Home_OnAppNameDraw(lv_event_t* e)
         #endif
         {"A:ic_app_home_book.spng", Home_AppNameBook, BookScreen::Create},
         {"A:ic_app_home_book.spng", Home_AppNameWeread, WereadScreen::Create},
+        {"A:ic_app_home_cloud.spng", Home_AppNameKosync, KosyncScreen::Create},
         {"A:ic_app_home_wallpaper.spng", Home_AppNameWallpaper, WallpaperScreen::Create},
         {"A:ic_app_home_cloud.spng", Home_AppNameCloud, CloudScreen::Create},
         {"A:ic_app_home_setting.spng", Home_AppNameSettings, SettingsScreen::Create},
@@ -91,6 +94,7 @@ void Home_OnAppNameDraw(lv_event_t* e)
     extern const AppEntry kSlashApps[] = {
         {"A:ic_app_home_book.spng", Home_AppNameBook, BookScreen::Create},
         {"A:ic_app_home_book.spng", Home_AppNameWeread, WereadScreen::Create},
+        {"A:ic_app_home_cloud.spng", Home_AppNameKosync, KosyncScreen::Create},
         {"A:ic_app_home_wallpaper.spng", Home_AppNameWallpaper, WallpaperScreen::Create},
         {"A:ic_app_home_setting.spng", Home_AppNameSettings, SettingsScreen::Create},
         {"A:ic_app_home_cloud.spng", Home_AppNameLansync, LansyncScreen::Create},

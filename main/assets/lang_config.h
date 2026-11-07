@@ -128,6 +128,7 @@ extern const char* HOME_APP_BOOK;
 extern const char* HOME_APP_WALLPAPER;
 extern const char* HOME_APP_CLOUD;
 extern const char* HOME_APP_WEREAD;
+extern const char* HOME_APP_KOSYNC;
 extern const char* WEREAD_TITLE;
 extern const char* WEREAD_REFRESH;
 extern const char* WEREAD_LOADING;

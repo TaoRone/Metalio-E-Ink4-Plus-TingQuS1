@@ -42,6 +42,9 @@ file(GLOB WEREAD_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/weread/*.cc"
 # 局域网剪贴板（听趣S1）：:8080 小服务 + 3 槽位
 file(GLOB LANSYNC_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/lansync_screen/*.cc")
 
+# KOReader 同步（听趣S1 Phase 3）：kosync 客户端服务 + 设置页
+file(GLOB KOSYNC_SCREEN_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/kosync_screen/*.cc")
+
 file(GLOB HOME_SCREEN_SRCS
     "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/home_screen/*.cc"
     "${CMAKE_CURRENT_SOURCE_DIR}/display/screen/home_screen/pixel/*.cc"
@@ -197,6 +200,7 @@ idf_component_register(
         ${WORKBUDDY_SRCS}
         ${WEREAD_SRCS}
         ${LANSYNC_SRCS}
+        ${KOSYNC_SCREEN_SRCS}
         ${SETTINGS_SCREEN_SRCS}
         ${BLUETOOTH_SCREEN_SRCS}
         ${NETWORK_SCREEN_SRCS}
