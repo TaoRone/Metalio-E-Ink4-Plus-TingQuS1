@@ -63,4 +63,18 @@ config USE_AUDIO_DEBUGGER
     bool "Audio debugger"
     default n
 
+config TINGQU_HIDE_TASK_APP
+    bool "TingQuS1: hide Daily Checklist app from home"
+    default y
+    help
+        软裁剪：仅从首页/应用列表隐藏「每日清单」，代码完整保留，
+        设为 n 即可回开。云端 endpoint 留空时该应用本就不可用。
+
+config TINGQU_HIDE_ASSISTANT_APP
+    bool "TingQuS1: hide Baiwen AI app from home"
+    default y
+    help
+        软裁剪：仅从首页/应用列表隐藏「百问 AI」，代码完整保留，
+        设为 n 即可回开。云端 endpoint 留空时语音助手不可用。
+
 endmenu
